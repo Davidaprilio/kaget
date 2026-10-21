@@ -1,0 +1,14 @@
+[Unit]
+Description=KAGeT touchpad gesture daemon
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+ExecStart=/usr/bin/kagetd
+# Re-enable the touchpad pointer and switch the NumberPad LED off even if the daemon was killed
+ExecStopPost=/usr/bin/kagetd --restore
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=graphical-session.target

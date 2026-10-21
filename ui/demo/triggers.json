@@ -1,0 +1,614 @@
+[
+  {
+    "trigger": "corner.top_left.hold",
+    "group": "corners",
+    "fingers": 1,
+    "system_owned": false,
+    "available": true,
+    "reason": "",
+    "description": "Touch inside the top-left corner and hold still"
+  },
+  {
+    "trigger": "corner.top_left.swipe.left",
+    "group": "corners",
+    "fingers": 1,
+    "system_owned": false,
+    "available": true,
+    "reason": "",
+    "description": "Start in the top-left corner and move left more than 7 mm"
+  },
+  {
+    "trigger": "corner.top_left.swipe.right",
+    "group": "corners",
+    "fingers": 1,
+    "system_owned": false,
+    "available": true,
+    "reason": "",
+    "description": "Start in the top-left corner and move right more than 7 mm"
+  },
+  {
+    "trigger": "corner.top_left.swipe.up",
+    "group": "corners",
+    "fingers": 1,
+    "system_owned": false,
+    "available": true,
+    "reason": "",
+    "description": "Start in the top-left corner and move up more than 7 mm"
+  },
+  {
+    "trigger": "corner.top_left.swipe.down",
+    "group": "corners",
+    "fingers": 1,
+    "system_owned": false,
+    "available": true,
+    "reason": "",
+    "description": "Start in the top-left corner and move down more than 7 mm"
+  },
+  {
+    "trigger": "corner.top_left.swipe.diagonal",
+    "group": "corners",
+    "fingers": 1,
+    "system_owned": false,
+    "available": true,
+    "reason": "",
+    "description": "Start in the top-left corner and move diagonally towards the centre"
+  },
+  {
+    "trigger": "corner.top_right.hold",
+    "group": "corners",
+    "fingers": 1,
+    "system_owned": false,
+    "available": true,
+    "reason": "",
+    "description": "Touch inside the top-right corner and hold still"
+  },
+  {
+    "trigger": "corner.top_right.swipe.left",
+    "group": "corners",
+    "fingers": 1,
+    "system_owned": false,
+    "available": true,
+    "reason": "",
+    "description": "Start in the top-right corner and move left more than 7 mm"
+  },
+  {
+    "trigger": "corner.top_right.swipe.right",
+    "group": "corners",
+    "fingers": 1,
+    "system_owned": false,
+    "available": true,
+    "reason": "",
+    "description": "Start in the top-right corner and move right more than 7 mm"
+  },
+  {
+    "trigger": "corner.top_right.swipe.up",
+    "group": "corners",
+    "fingers": 1,
+    "system_owned": false,
+    "available": true,
+    "reason": "",
+    "description": "Start in the top-right corner and move up more than 7 mm"
+  },
+  {
+    "trigger": "corner.top_right.swipe.down",
+    "group": "corners",
+    "fingers": 1,
+    "system_owned": false,
+    "available": true,
+    "reason": "",
+    "description": "Start in the top-right corner and move down more than 7 mm"
+  },
+  {
+    "trigger": "corner.top_right.swipe.diagonal",
+    "group": "corners",
+    "fingers": 1,
+    "system_owned": false,
+    "available": true,
+    "reason": "",
+    "description": "Start in the top-right corner and move diagonally towards the centre"
+  },
+  {
+    "trigger": "corner.bottom_left.hold",
+    "group": "corners",
+    "fingers": 1,
+    "system_owned": false,
+    "available": true,
+    "reason": "",
+    "description": "Touch inside the bottom-left corner and hold still"
+  },
+  {
+    "trigger": "corner.bottom_left.swipe.left",
+    "group": "corners",
+    "fingers": 1,
+    "system_owned": false,
+    "available": true,
+    "reason": "",
+    "description": "Start in the bottom-left corner and move left more than 7 mm"
+  },
+  {
+    "trigger": "corner.bottom_left.swipe.right",
+    "group": "corners",
+    "fingers": 1,
+    "system_owned": false,
+    "available": true,
+    "reason": "",
+    "description": "Start in the bottom-left corner and move right more than 7 mm"
+  },
+  {
+    "trigger": "corner.bottom_left.swipe.up",
+    "group": "corners",
+    "fingers": 1,
+    "system_owned": false,
+    "available": true,
+    "reason": "",
+    "description": "Start in the bottom-left corner and move up more than 7 mm"
+  },
+  {
+    "trigger": "corner.bottom_left.swipe.down",
+    "group": "corners",
+    "fingers": 1,
+    "system_owned": false,
+    "available": true,
+    "reason": "",
+    "description": "Start in the bottom-left corner and move down more than 7 mm"
+  },
+  {
+    "trigger": "corner.bottom_left.swipe.diagonal",
+    "group": "corners",
+    "fingers": 1,
+    "system_owned": false,
+    "available": true,
+    "reason": "",
+    "description": "Start in the bottom-left corner and move diagonally towards the centre"
+  },
+  {
+    "trigger": "corner.bottom_right.hold",
+    "group": "corners",
+    "fingers": 1,
+    "system_owned": false,
+    "available": true,
+    "reason": "",
+    "description": "Touch inside the bottom-right corner and hold still"
+  },
+  {
+    "trigger": "corner.bottom_right.swipe.left",
+    "group": "corners",
+    "fingers": 1,
+    "system_owned": false,
+    "available": true,
+    "reason": "",
+    "description": "Start in the bottom-right corner and move left more than 7 mm"
+  },
+  {
+    "trigger": "corner.bottom_right.swipe.right",
+    "group": "corners",
+    "fingers": 1,
+    "system_owned": false,
+    "available": true,
+    "reason": "",
+    "description": "Start in the bottom-right corner and move right more than 7 mm"
+  },
+  {
+    "trigger": "corner.bottom_right.swipe.up",
+    "group": "corners",
+    "fingers": 1,
+    "system_owned": false,
+    "available": true,
+    "reason": "",
+    "description": "Start in the bottom-right corner and move up more than 7 mm"
+  },
+  {
+    "trigger": "corner.bottom_right.swipe.down",
+    "group": "corners",
+    "fingers": 1,
+    "system_owned": false,
+    "available": true,
+    "reason": "",
+    "description": "Start in the bottom-right corner and move down more than 7 mm"
+  },
+  {
+    "trigger": "corner.bottom_right.swipe.diagonal",
+    "group": "corners",
+    "fingers": 1,
+    "system_owned": false,
+    "available": true,
+    "reason": "",
+    "description": "Start in the bottom-right corner and move diagonally towards the centre"
+  },
+  {
+    "trigger": "sidedrag.top.3",
+    "group": "side_drag",
+    "fingers": 3,
+    "system_owned": false,
+    "available": true,
+    "reason": "",
+    "description": "Land three fingers on the top side-drag band and drag inwards"
+  },
+  {
+    "trigger": "sidedrag.top.4",
+    "group": "side_drag",
+    "fingers": 4,
+    "system_owned": false,
+    "available": true,
+    "reason": "",
+    "description": "Land four fingers on the top side-drag band and drag inwards"
+  },
+  {
+    "trigger": "sidedrag.right.3",
+    "group": "side_drag",
+    "fingers": 3,
+    "system_owned": false,
+    "available": true,
+    "reason": "",
+    "description": "Land three fingers on the right side-drag band and drag inwards"
+  },
+  {
+    "trigger": "sidedrag.right.4",
+    "group": "side_drag",
+    "fingers": 4,
+    "system_owned": false,
+    "available": true,
+    "reason": "",
+    "description": "Land four fingers on the right side-drag band and drag inwards"
+  },
+  {
+    "trigger": "sidedrag.bottom.3",
+    "group": "side_drag",
+    "fingers": 3,
+    "system_owned": false,
+    "available": true,
+    "reason": "",
+    "description": "Land three fingers on the bottom side-drag band and drag inwards"
+  },
+  {
+    "trigger": "sidedrag.bottom.4",
+    "group": "side_drag",
+    "fingers": 4,
+    "system_owned": false,
+    "available": true,
+    "reason": "",
+    "description": "Land four fingers on the bottom side-drag band and drag inwards"
+  },
+  {
+    "trigger": "sidedrag.left.3",
+    "group": "side_drag",
+    "fingers": 3,
+    "system_owned": false,
+    "available": true,
+    "reason": "",
+    "description": "Land three fingers on the left side-drag band and drag inwards"
+  },
+  {
+    "trigger": "sidedrag.left.4",
+    "group": "side_drag",
+    "fingers": 4,
+    "system_owned": false,
+    "available": true,
+    "reason": "",
+    "description": "Land four fingers on the left side-drag band and drag inwards"
+  },
+  {
+    "trigger": "swipe.3.left",
+    "group": "swipe",
+    "fingers": 3,
+    "system_owned": true,
+    "available": true,
+    "reason": "",
+    "description": "Move three fingers together left"
+  },
+  {
+    "trigger": "swipe.3.right",
+    "group": "swipe",
+    "fingers": 3,
+    "system_owned": true,
+    "available": true,
+    "reason": "",
+    "description": "Move three fingers together right"
+  },
+  {
+    "trigger": "swipe.3.up",
+    "group": "swipe",
+    "fingers": 3,
+    "system_owned": true,
+    "available": true,
+    "reason": "",
+    "description": "Move three fingers together up"
+  },
+  {
+    "trigger": "swipe.3.down",
+    "group": "swipe",
+    "fingers": 3,
+    "system_owned": true,
+    "available": true,
+    "reason": "",
+    "description": "Move three fingers together down"
+  },
+  {
+    "trigger": "swipe.4.left",
+    "group": "swipe",
+    "fingers": 4,
+    "system_owned": true,
+    "available": true,
+    "reason": "",
+    "description": "Move four fingers together left"
+  },
+  {
+    "trigger": "swipe.4.right",
+    "group": "swipe",
+    "fingers": 4,
+    "system_owned": true,
+    "available": true,
+    "reason": "",
+    "description": "Move four fingers together right"
+  },
+  {
+    "trigger": "swipe.4.up",
+    "group": "swipe",
+    "fingers": 4,
+    "system_owned": true,
+    "available": true,
+    "reason": "",
+    "description": "Move four fingers together up"
+  },
+  {
+    "trigger": "swipe.4.down",
+    "group": "swipe",
+    "fingers": 4,
+    "system_owned": true,
+    "available": true,
+    "reason": "",
+    "description": "Move four fingers together down"
+  },
+  {
+    "trigger": "swipe.5.left",
+    "group": "swipe",
+    "fingers": 5,
+    "system_owned": false,
+    "available": true,
+    "reason": "",
+    "description": "Move five fingers together left"
+  },
+  {
+    "trigger": "swipe.5.right",
+    "group": "swipe",
+    "fingers": 5,
+    "system_owned": false,
+    "available": true,
+    "reason": "",
+    "description": "Move five fingers together right"
+  },
+  {
+    "trigger": "swipe.5.up",
+    "group": "swipe",
+    "fingers": 5,
+    "system_owned": false,
+    "available": true,
+    "reason": "",
+    "description": "Move five fingers together up"
+  },
+  {
+    "trigger": "swipe.5.down",
+    "group": "swipe",
+    "fingers": 5,
+    "system_owned": false,
+    "available": true,
+    "reason": "",
+    "description": "Move five fingers together down"
+  },
+  {
+    "trigger": "pinch.3.in",
+    "group": "pinch",
+    "fingers": 3,
+    "system_owned": true,
+    "available": true,
+    "reason": "",
+    "description": "Pinch three fingers together"
+  },
+  {
+    "trigger": "pinch.3.out",
+    "group": "pinch",
+    "fingers": 3,
+    "system_owned": true,
+    "available": true,
+    "reason": "",
+    "description": "Spread three fingers apart"
+  },
+  {
+    "trigger": "pinch.4.in",
+    "group": "pinch",
+    "fingers": 4,
+    "system_owned": true,
+    "available": true,
+    "reason": "",
+    "description": "Pinch four fingers together"
+  },
+  {
+    "trigger": "pinch.4.out",
+    "group": "pinch",
+    "fingers": 4,
+    "system_owned": true,
+    "available": true,
+    "reason": "",
+    "description": "Spread four fingers apart"
+  },
+  {
+    "trigger": "pinch.5.in",
+    "group": "pinch",
+    "fingers": 5,
+    "system_owned": false,
+    "available": true,
+    "reason": "",
+    "description": "Pinch five fingers together"
+  },
+  {
+    "trigger": "pinch.5.out",
+    "group": "pinch",
+    "fingers": 5,
+    "system_owned": false,
+    "available": true,
+    "reason": "",
+    "description": "Spread five fingers apart"
+  },
+  {
+    "trigger": "rotate.3.cw",
+    "group": "rotate",
+    "fingers": 3,
+    "system_owned": false,
+    "available": true,
+    "reason": "",
+    "description": "Rotate three fingers clockwise"
+  },
+  {
+    "trigger": "rotate.3.ccw",
+    "group": "rotate",
+    "fingers": 3,
+    "system_owned": false,
+    "available": true,
+    "reason": "",
+    "description": "Rotate three fingers counter-clockwise"
+  },
+  {
+    "trigger": "rotate.4.cw",
+    "group": "rotate",
+    "fingers": 4,
+    "system_owned": false,
+    "available": true,
+    "reason": "",
+    "description": "Rotate four fingers clockwise"
+  },
+  {
+    "trigger": "rotate.4.ccw",
+    "group": "rotate",
+    "fingers": 4,
+    "system_owned": false,
+    "available": true,
+    "reason": "",
+    "description": "Rotate four fingers counter-clockwise"
+  },
+  {
+    "trigger": "rotate.5.cw",
+    "group": "rotate",
+    "fingers": 5,
+    "system_owned": false,
+    "available": true,
+    "reason": "",
+    "description": "Rotate five fingers clockwise"
+  },
+  {
+    "trigger": "rotate.5.ccw",
+    "group": "rotate",
+    "fingers": 5,
+    "system_owned": false,
+    "available": true,
+    "reason": "",
+    "description": "Rotate five fingers counter-clockwise"
+  },
+  {
+    "trigger": "tap.3",
+    "group": "taps",
+    "fingers": 3,
+    "system_owned": true,
+    "available": true,
+    "reason": "",
+    "description": "Tap briefly with three fingers"
+  },
+  {
+    "trigger": "doubletap.3",
+    "group": "taps",
+    "fingers": 3,
+    "system_owned": false,
+    "available": true,
+    "reason": "",
+    "description": "Tap twice quickly with three fingers"
+  },
+  {
+    "trigger": "hold.3",
+    "group": "taps",
+    "fingers": 3,
+    "system_owned": false,
+    "available": true,
+    "reason": "",
+    "description": "Hold three fingers still"
+  },
+  {
+    "trigger": "taphold.3",
+    "group": "taps",
+    "fingers": 3,
+    "system_owned": false,
+    "available": true,
+    "reason": "",
+    "description": "Tap with three fingers, then touch again and hold"
+  },
+  {
+    "trigger": "tap.4",
+    "group": "taps",
+    "fingers": 4,
+    "system_owned": false,
+    "available": true,
+    "reason": "",
+    "description": "Tap briefly with four fingers"
+  },
+  {
+    "trigger": "doubletap.4",
+    "group": "taps",
+    "fingers": 4,
+    "system_owned": false,
+    "available": true,
+    "reason": "",
+    "description": "Tap twice quickly with four fingers"
+  },
+  {
+    "trigger": "hold.4",
+    "group": "taps",
+    "fingers": 4,
+    "system_owned": false,
+    "available": true,
+    "reason": "",
+    "description": "Hold four fingers still"
+  },
+  {
+    "trigger": "taphold.4",
+    "group": "taps",
+    "fingers": 4,
+    "system_owned": false,
+    "available": true,
+    "reason": "",
+    "description": "Tap with four fingers, then touch again and hold"
+  },
+  {
+    "trigger": "tap.5",
+    "group": "taps",
+    "fingers": 5,
+    "system_owned": false,
+    "available": true,
+    "reason": "",
+    "description": "Tap briefly with five fingers"
+  },
+  {
+    "trigger": "doubletap.5",
+    "group": "taps",
+    "fingers": 5,
+    "system_owned": false,
+    "available": true,
+    "reason": "",
+    "description": "Tap twice quickly with five fingers"
+  },
+  {
+    "trigger": "hold.5",
+    "group": "taps",
+    "fingers": 5,
+    "system_owned": false,
+    "available": true,
+    "reason": "",
+    "description": "Hold five fingers still"
+  },
+  {
+    "trigger": "taphold.5",
+    "group": "taps",
+    "fingers": 5,
+    "system_owned": false,
+    "available": true,
+    "reason": "",
+    "description": "Tap with five fingers, then touch again and hold"
+  }
+]

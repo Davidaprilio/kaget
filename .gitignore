@@ -1,0 +1,11 @@
+/target
+/ui/build
+
+# development notes and device analysis stay local
+/PLAN_IMPL.md
+/SPEC.md
+/ui/README.md
+*.notes.md
+/CLAUDE.md
+/.claude/
+/CLAUDE.local.md

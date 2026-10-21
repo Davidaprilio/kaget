@@ -1,0 +1,43 @@
+# Maintainer: David Aprilio <david1.aprilio4@gmail.com>
+pkgname=kaget
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="KDE Advanced Gesture Touchpad: corner gestures, sliders, multi-finger gestures and ASUS NumberPad for Plasma"
+arch=('x86_64')
+license=('GPL-3.0-or-later')
+depends=('kirigami' 'ki18n' 'kcoreaddons' 'qt6-declarative' 'kde-cli-tools')
+optdepends=('wireplumber: volume steps other than 1 %')
+makedepends=('cargo' 'cmake' 'ninja' 'extra-cmake-modules')
+# Build from the working tree: makepkg -p packaging/PKGBUILD (run in the repository root)
+source=()
+sha256sums=()
+
+_root() { realpath "$startdir/.."; }
+
+prepare() {
+    cd "$(_root)"
+    export RUSTUP_TOOLCHAIN=stable
+    cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
+}
+
+build() {
+    cd "$(_root)"
+    export RUSTUP_TOOLCHAIN=stable
+    export CARGO_TARGET_DIR="$srcdir/target"
+    cargo build --release --locked --frozen -p kagetd
+    cmake -S ui -B "$srcdir/ui-build" -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
+    cmake --build "$srcdir/ui-build"
+}
+
+check() {
+    cd "$(_root)"
+    CARGO_TARGET_DIR="$srcdir/target" cargo test --release --locked --frozen -p kagetd
+}
+
+package() {
+    cd "$(_root)"
+    install -Dm755 "$srcdir/target/release/kagetd" "$pkgdir/usr/bin/kagetd"
+    install -Dm644 packaging/kagetd.service "$pkgdir/usr/lib/systemd/user/kagetd.service"
+    install -Dm644 packaging/70-kaget.rules "$pkgdir/usr/lib/udev/rules.d/70-kaget.rules"
+    DESTDIR="$pkgdir" cmake --install "$srcdir/ui-build"
+}

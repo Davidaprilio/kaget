@@ -1,0 +1,54 @@
+[
+  {
+    "trigger": "swipe.3.left",
+    "description": "KWin: 3-finger swipe (switch virtual desktop / overview)"
+  },
+  {
+    "trigger": "swipe.3.right",
+    "description": "KWin: 3-finger swipe (switch virtual desktop / overview)"
+  },
+  {
+    "trigger": "swipe.3.up",
+    "description": "KWin: 3-finger swipe (switch virtual desktop / overview)"
+  },
+  {
+    "trigger": "swipe.3.down",
+    "description": "KWin: 3-finger swipe (switch virtual desktop / overview)"
+  },
+  {
+    "trigger": "swipe.4.left",
+    "description": "KWin: 4-finger swipe (overview, grid, desktop)"
+  },
+  {
+    "trigger": "swipe.4.right",
+    "description": "KWin: 4-finger swipe (overview, grid, desktop)"
+  },
+  {
+    "trigger": "swipe.4.up",
+    "description": "KWin: 4-finger swipe (overview, grid, desktop)"
+  },
+  {
+    "trigger": "swipe.4.down",
+    "description": "KWin: 4-finger swipe (overview, grid, desktop)"
+  },
+  {
+    "trigger": "pinch.3.in",
+    "description": "KWin: 3-finger pinch"
+  },
+  {
+    "trigger": "pinch.3.out",
+    "description": "KWin: 3-finger pinch"
+  },
+  {
+    "trigger": "pinch.4.in",
+    "description": "KWin: 4-finger pinch (overview)"
+  },
+  {
+    "trigger": "pinch.4.out",
+    "description": "KWin: 4-finger pinch (overview)"
+  },
+  {
+    "trigger": "tap.3",
+    "description": "libinput: 3-finger tap (middle click)"
+  }
+]

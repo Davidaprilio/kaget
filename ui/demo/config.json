@@ -1,0 +1,86 @@
+{
+  "version": 1,
+  "general": {
+    "enabled": true,
+    "mode": "passive",
+    "override_system_gestures": false
+  },
+  "device": {
+    "width_mm": 100.0,
+    "height_mm": 60.0
+  },
+  "area": {
+    "top": 27.0,
+    "right": 27.0,
+    "bottom": 0.0,
+    "left": 27.0,
+    "enabled": true
+  },
+  "corners": {
+    "width": 8.0,
+    "height": 10.0,
+    "hold_ms": 320,
+    "enabled": true
+  },
+  "side_drag": {
+    "top": 4.0,
+    "right": 4.0,
+    "bottom": 4.0,
+    "left": 4.0,
+    "min_travel_mm": 10.0,
+    "enabled": false
+  },
+  "slider": {
+    "step_mm": 8.0,
+    "continue_s": 2.0
+  },
+  "gestures": {
+    "swipe_mm": 12.0,
+    "pinch_ratio": 1.3,
+    "rotate_deg": 25.0
+  },
+  "taps": {
+    "max_tap_ms": 250,
+    "double_tap_ms": 300,
+    "hold_ms": 500
+  },
+  "numberpad": {
+    "enabled": true,
+    "calculator_command": "kcalc"
+  },
+  "bindings": [
+    {
+      "trigger": "corner.top_right.hold",
+      "action": "numberpad.toggle"
+    },
+    {
+      "trigger": "corner.top_left.hold",
+      "action": "numberpad.brightness_cycle"
+    },
+    {
+      "trigger": "corner.top_left.swipe.right",
+      "action": "brightness.up"
+    },
+    {
+      "trigger": "corner.top_left.swipe.down",
+      "action": "cmd:kcalc"
+    },
+    {
+      "trigger": "corner.top_left.swipe.diagonal",
+      "action": "cmd:kcalc"
+    },
+    {
+      "trigger": "corner.top_right.swipe.left",
+      "action": "brightness.down"
+    },
+    {
+      "trigger": "corner.top_right.swipe.down",
+      "action": "volume.down"
+    }
+  ],
+  "steps": {
+    "brightness_percent": 1.0,
+    "volume_percent": 1.0,
+    "keyboard_backlight_levels": 1
+  }
+}

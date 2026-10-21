@@ -1,0 +1,6 @@
+# KAGeT: let the logged-in user create the virtual keyboard (key actions, NumberPad keys)
+KERNEL=="uinput", SUBSYSTEM=="misc", TAG+="uaccess", OPTIONS+="static_node=uinput"
+
+# NumberPad LED (HID feature report on the touchpad's hidraw node), one line per supported profile
+# ASUS ASUP1415 (PixArt 093A:300C)
+SUBSYSTEM=="hidraw", KERNELS=="0018:093A:300C.*", TAG+="uaccess"

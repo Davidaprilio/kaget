@@ -1,0 +1,170 @@
+[
+  {
+    "action": "none",
+    "label": "Do nothing",
+    "category": "General",
+    "slider": false
+  },
+  {
+    "action": "system",
+    "label": "System default",
+    "category": "General",
+    "slider": false
+  },
+  {
+    "action": "volume.up",
+    "label": "Volume up",
+    "category": "Media",
+    "slider": true
+  },
+  {
+    "action": "volume.down",
+    "label": "Volume down",
+    "category": "Media",
+    "slider": true
+  },
+  {
+    "action": "volume.mute",
+    "label": "Mute",
+    "category": "Media",
+    "slider": false
+  },
+  {
+    "action": "media.play_pause",
+    "label": "Play / pause",
+    "category": "Media",
+    "slider": false
+  },
+  {
+    "action": "media.next",
+    "label": "Next track",
+    "category": "Media",
+    "slider": true
+  },
+  {
+    "action": "media.previous",
+    "label": "Previous track",
+    "category": "Media",
+    "slider": true
+  },
+  {
+    "action": "keyboard_backlight.up",
+    "label": "Keyboard backlight up",
+    "category": "Hardware",
+    "slider": true
+  },
+  {
+    "action": "keyboard_backlight.down",
+    "label": "Keyboard backlight down",
+    "category": "Hardware",
+    "slider": true
+  },
+  {
+    "action": "brightness.up",
+    "label": "Brightness up",
+    "category": "Display",
+    "slider": true
+  },
+  {
+    "action": "brightness.down",
+    "label": "Brightness down",
+    "category": "Display",
+    "slider": true
+  },
+  {
+    "action": "numberpad.toggle",
+    "label": "Toggle NumberPad",
+    "category": "NumberPad",
+    "slider": false
+  },
+  {
+    "action": "numberpad.brightness_cycle",
+    "label": "Cycle NumberPad brightness",
+    "category": "NumberPad",
+    "slider": false
+  },
+  {
+    "action": "numberpad.brightness_up",
+    "label": "NumberPad brightness up",
+    "category": "NumberPad",
+    "slider": true
+  },
+  {
+    "action": "numberpad.brightness_down",
+    "label": "NumberPad brightness down",
+    "category": "NumberPad",
+    "slider": true
+  },
+  {
+    "action": "kaget.pause",
+    "label": "Pause / resume KAGeT",
+    "category": "KAGeT",
+    "slider": false
+  },
+  {
+    "action": "kwin:Overview",
+    "label": "Toggle Overview",
+    "category": "KWin",
+    "slider": false
+  },
+  {
+    "action": "kwin:ExposeAll",
+    "label": "Toggle Present Windows (All desktops)",
+    "category": "KWin",
+    "slider": false
+  },
+  {
+    "action": "kwin:Show Desktop",
+    "label": "Peek at Desktop",
+    "category": "KWin",
+    "slider": false
+  },
+  {
+    "action": "kwin:Window Maximize",
+    "label": "Maximize Window",
+    "category": "KWin",
+    "slider": false
+  },
+  {
+    "action": "kwin:Window Minimize",
+    "label": "Minimize Window",
+    "category": "KWin",
+    "slider": false
+  },
+  {
+    "action": "kwin:Switch One Desktop to the Left",
+    "label": "Switch One Desktop to the Left",
+    "category": "KWin",
+    "slider": true
+  },
+  {
+    "action": "kwin:Switch One Desktop to the Right",
+    "label": "Switch One Desktop to the Right",
+    "category": "KWin",
+    "slider": true
+  },
+  {
+    "action": "kwin:Window One Desktop to the Left",
+    "label": "Window One Desktop to the Left",
+    "category": "KWin",
+    "slider": false
+  },
+  {
+    "action": "kwin:Window One Desktop to the Right",
+    "label": "Window One Desktop to the Right",
+    "category": "KWin",
+    "slider": false
+  },
+  {
+    "action": "global:plasmashell:activate application launcher",
+    "label": "Activate Application Launcher",
+    "category": "Plasma",
+    "slider": false
+  },
+  {
+    "action": "global:plasmashell:toggle do not disturb",
+    "label": "Toggle Do Not Disturb",
+    "category": "Plasma",
+    "slider": false
+  }
+]
