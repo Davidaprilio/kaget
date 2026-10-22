@@ -18,6 +18,8 @@ pub enum Action {
     Command(String),
     NumberPad(NumberPadOp),
     Pause,
+    /// Show / hide the touchpad control panel (`kaget-panel`).
+    Panel,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -98,6 +100,7 @@ impl Action {
             "none" | "" => Action::None,
             "system" => Action::System,
             "kaget.pause" => Action::Pause,
+            "kaget.panel" => Action::Panel,
             "numberpad.toggle" => Action::NumberPad(NumberPadOp::Toggle),
             "numberpad.brightness_cycle" => Action::NumberPad(NumberPadOp::BrightnessCycle),
             "numberpad.brightness_up" => Action::NumberPad(NumberPadOp::BrightnessUp),
@@ -150,6 +153,7 @@ pub fn catalog(kwin_shortcuts: &[String], plasma_shortcuts: &[String], numberpad
         entry("none", "Do nothing", "General"),
         entry("system", "System default", "General"),
         entry("kaget.pause", "Pause / resume KAGeT gestures", "General"),
+        entry("kaget.panel", "Show / hide the touchpad control panel", "General"),
     ];
     for &(name, label, cat) in BUILTINS {
         v.push(entry(name, label, cat));

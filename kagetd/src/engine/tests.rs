@@ -846,3 +846,179 @@ fn filter_numberpad_keys_are_withheld_and_pointer_stays_on() {
     assert_eq!(s.clone_sink().down(), [2].into());
     assert_eq!(s.out.keys.len(), 2);
 }
+
+// ---- panel mode: the touchpad becomes the control panel's sliders ---------------------------------
+
+use super::outputs::PanelEvent;
+
+const PANEL: &[(&str, &str)] = &[("corner.top_right.hold", "kaget.panel"), ("corner.top_right.swipe.down", "volume.down")];
+
+/// Sum of the Adjust deltas for one control.
+fn adjusted(s: &Sim, kind: &str) -> f64 {
+    s.out
+        .panel
+        .iter()
+        .filter_map(|e| match e {
+            PanelEvent::Adjust { kind: k, delta } if k == kind => Some(*delta),
+            _ => None,
+        })
+        .sum()
+}
+
+fn open_panel(s: &mut Sim) {
+    s.touch(0.0, 0, 3900, 100);
+    s.hold(0.0, 0.4, 0, 3900, 100);
+    s.lift(0.4, 0);
+}
+
+#[test]
+fn panel_opens_from_its_trigger_and_turns_the_pointer_off() {
+    let mut s = sim(PANEL);
+    open_panel(&mut s);
+    assert!(s.e.panel_open());
+    assert_eq!(s.out.panel, [PanelEvent::Open]);
+    assert_eq!(s.out.pointer, [false]);
+    assert!(s.out.fired[0].local);
+}
+
+#[test]
+fn panel_columns_move_their_slider() {
+    let mut s = sim(PANEL);
+    open_panel(&mut s);
+    // 4 columns of 32 mm: x = 40 mm is the second one (volume); up 20 mm
+    s.touch(0.5, 0, 1240, 1500);
+    assert!(s.out.panel.contains(&PanelEvent::Focus(Some(1))));
+    s.drag(0.5, 0, (1240, 1500), (0, -31), 20);
+    let v = adjusted(&s, "volume");
+    // the first 2 mm are the dead zone, then it follows the finger
+    let per_mm = 100.0 * super::PANEL_GAIN / (2242.0 / 31.0);
+    let want = (20.0 - super::PANEL_DEADZONE_MM) * per_mm;
+    assert!((v - want).abs() < 1.0, "{v} vs {want}");
+    assert_eq!(adjusted(&s, "brightness"), 0.0);
+    // moving back down lowers it again, at once (no second dead zone)
+    s.drag(0.7, 0, (1240, 880), (0, 31), 10);
+    assert!((adjusted(&s, "volume") - (want - 10.0 * per_mm)).abs() < 1.0);
+    s.lift(0.9, 0);
+    assert_eq!(s.out.panel.last(), Some(&PanelEvent::Focus(None)));
+    assert!(s.out.fired.iter().all(|f| f.action == "kaget.panel"), "no gestures in panel mode");
+}
+
+#[test]
+fn panel_ignores_a_trembling_finger() {
+    let mut s = sim(PANEL);
+    open_panel(&mut s);
+    s.touch(0.5, 0, 1240, 1500);
+    // ±1.3 mm wobble around the touch point, a fraction of a mm sideways
+    for i in 0..60 {
+        let dy = [0, 25, -40, 15, 40, -25][i % 6];
+        s.mv(0.5 + i as f64 * 0.008, 0, 1240 + (i % 3) as i32 * 5, 1500 + dy);
+    }
+    assert_eq!(adjusted(&s, "volume"), 0.0);
+    // once really moving, sub-step tremble is still dropped: 0.3 mm back and forth
+    s.drag(1.0, 0, (1240, 1500), (0, -31), 6);
+    let before = s.out.panel.len();
+    for i in 0..30 {
+        s.mv(1.1 + i as f64 * 0.008, 0, 1240, 1314 + if i % 2 == 0 { 9 } else { -9 });
+    }
+    assert_eq!(s.out.panel.len(), before, "no events for tremble below a step");
+}
+
+#[test]
+fn panel_closes_after_idle_time_but_not_under_a_finger() {
+    let mut s = sim(PANEL);
+    open_panel(&mut s);
+    s.touch(1.0, 0, 200, 1500);
+    s.tick(5.0);
+    assert!(s.e.panel_open(), "finger still on a column");
+    s.lift(5.0, 0);
+    s.tick(7.5);
+    assert!(s.e.panel_open());
+    s.tick(8.1);
+    assert!(!s.e.panel_open());
+    assert_eq!(s.out.panel.iter().filter(|e| **e == PanelEvent::Close).count(), 1);
+    assert_eq!(s.out.pointer, [false, true]);
+}
+
+#[test]
+fn panel_trigger_hold_again_closes_it() {
+    let mut s = sim(PANEL);
+    open_panel(&mut s);
+    s.touch(1.0, 0, 3900, 100);
+    s.hold(1.0, 1.4, 0, 3900, 100);
+    assert!(!s.e.panel_open());
+    assert_eq!(s.out.pointer, [false, true]);
+}
+
+#[test]
+fn panel_drag_from_a_corner_moves_the_slider_not_the_corner_gesture() {
+    let mut s = sim(PANEL);
+    open_panel(&mut s);
+    s.touch(1.0, 0, 3900, 100); // top right corner = scale column
+    s.drag(1.0, 0, (3900, 100), (0, 40), 20);
+    s.lift(1.2, 0);
+    assert!(adjusted(&s, "scale") < -10.0, "scale went down with the finger");
+    assert!(!s.out.fired.iter().any(|f| f.action == "volume.down"));
+    assert!(s.out.panel.contains(&PanelEvent::Commit));
+    assert!(s.e.panel_open());
+}
+
+#[test]
+fn panel_keeps_pointer_off_while_numberpad_is_on() {
+    let mut s = sim_with(config(&[("corner.top_left.hold", "kaget.panel"), ("corner.top_right.hold", "numberpad.toggle")]), true);
+    s.e.set_numlock(true, &mut s.out);
+    assert_eq!(s.out.pointer, [false]);
+    s.touch(0.0, 0, 100, 100);
+    s.hold(0.0, 0.4, 0, 100, 100);
+    s.lift(0.4, 0);
+    s.tick(4.0); // panel closed by idle time
+    assert!(!s.e.panel_open());
+    assert_eq!(s.out.pointer, [false], "NumberPad still needs the pointer off");
+}
+
+#[test]
+fn panel_in_filter_mode_withholds_instead_of_switching_the_pointer() {
+    let mut s = filter_sim(PANEL, false, false);
+    open_panel(&mut s);
+    s.touch(1.0, 0, 1240, 1500);
+    s.drag(1.0, 0, (1240, 1500), (0, -31), 10);
+    assert!(s.out.pointer.is_empty());
+    assert!(s.clone_sink().frames.is_empty(), "panel touches never reach the desktop");
+    assert!(adjusted(&s, "volume") > 0.0);
+}
+
+#[test]
+fn panel_button_column_runs_its_action_on_a_tap() {
+    let mut c = config(PANEL);
+    c.panel.controls = vec!["brightness".into(), "action:media.play_pause".into()];
+    let mut s = sim_with(c, false);
+    open_panel(&mut s);
+    // two columns: the right half is the button
+    s.touch(1.0, 0, 3000, 1500);
+    assert!(s.out.panel.contains(&PanelEvent::Focus(Some(1))));
+    s.lift(1.1, 0);
+    assert_eq!(s.out.actions(), ["kaget.panel", "media.play_pause"]);
+    assert_eq!(s.out.fired[1].trigger, "panel");
+    // dragging or holding it does nothing, and it never moves a slider
+    s.touch(2.0, 0, 3000, 1500);
+    s.drag(2.0, 0, (3000, 1500), (0, -31), 20);
+    s.lift(2.2, 0);
+    s.touch(3.0, 0, 3000, 1500);
+    s.hold(3.0, 3.8, 0, 3000, 1500);
+    s.lift(3.8, 0);
+    assert_eq!(s.out.fired.len(), 2);
+    assert!(!s.out.panel.iter().any(|e| matches!(e, PanelEvent::Adjust { .. })));
+}
+
+#[test]
+fn panel_slots_follow_the_configured_order() {
+    let mut c = config(PANEL);
+    c.panel.controls = vec!["volume".into(), "scale".into(), "brightness".into()];
+    let mut s = sim_with(c, false);
+    open_panel(&mut s);
+    // brightness is now the rightmost of three columns
+    s.touch(1.0, 0, 3600, 1500);
+    s.drag(1.0, 0, (3600, 1500), (0, -31), 10);
+    s.lift(1.1, 0);
+    assert!(adjusted(&s, "brightness") > 0.0);
+    assert_eq!(adjusted(&s, "volume"), 0.0);
+}

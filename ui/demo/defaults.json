@@ -82,5 +82,16 @@
     "brightness_percent": 1.0,
     "volume_percent": 1.0,
     "keyboard_backlight_levels": 1
+  },
+  "panel": {
+    "controls": [
+      "brightness",
+      "volume",
+      "keyboard_backlight",
+      "scale"
+    ],
+    "position": "bottom",
+    "scale": 1.0,
+    "auto_hide_s": 3.0
   }
 }

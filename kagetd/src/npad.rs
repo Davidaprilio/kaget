@@ -36,7 +36,7 @@ impl NumberPad {
         out.pointer(true);
     }
 
-    /// Follow the NumLock state. Returns true if it changed.
+    /// Follow the NumLock state. Returns true if it changed (the engine then switches the pointer).
     pub fn set_active(&mut self, on: bool, out: &mut dyn Outputs) -> bool {
         if on == self.active {
             return false;
@@ -50,7 +50,6 @@ impl NumberPad {
         } else {
             out.led(self.profile.led_off);
         }
-        out.pointer(!on);
         eprintln!("NumberPad {}", if on { "on" } else { "off" });
         true
     }

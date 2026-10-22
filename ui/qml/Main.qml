@@ -47,6 +47,11 @@ Kirigami.ApplicationWindow {
         actionPicker.openFor(trigger, 0);
     }
 
+    /// Control panel: pick the action of button slot `index` (-1 adds a new slot).
+    function pickPanelAction(index: int, action: string) {
+        actionPicker.openForPanel(index, action);
+    }
+
     // Used by the hidden --screenshot mode to put the UI into a known state.
     function prepareScreenshot(state: string) {
         if (state === "reset") {

@@ -60,12 +60,19 @@ Kirigami.Page {
             // contentWidth follows the width, so do not let it feed back into the layout.
             Layout.preferredWidth: 1
             Layout.minimumWidth: 0
-            contentWidth: availableWidth
+            // The content width always leaves room for the vertical scroll bar. Otherwise the bar
+            // appearing (e.g. when the Apply bar shows up during a line drag) narrows the map, the
+            // smaller map fits again, the bar goes away, and the map flickers between two sizes.
+            // (the style also adds the bar to rightPadding while it shows: take that back out)
+            readonly property real stableWidth: Math.max(0, width - leftPadding
+                - (rightPadding - (QQC2.ScrollBar.vertical.visible ? QQC2.ScrollBar.vertical.width : 0))
+                - QQC2.ScrollBar.vertical.implicitWidth)
+            contentWidth: stableWidth
             QQC2.ScrollBar.horizontal.policy: QQC2.ScrollBar.AlwaysOff
 
             ColumnLayout {
                 id: mainColumn
-                width: mainScroll.availableWidth
+                width: mainScroll.stableWidth
                 spacing: Kirigami.Units.largeSpacing
 
                 // Legend

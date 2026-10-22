@@ -5,7 +5,7 @@ pkgrel=1
 pkgdesc="KDE Advanced Gesture Touchpad: corner gestures, sliders, multi-finger gestures and ASUS NumberPad for Plasma"
 arch=('x86_64')
 license=('GPL-3.0-or-later')
-depends=('kirigami' 'ki18n' 'kcoreaddons' 'qt6-declarative' 'kde-cli-tools')
+depends=('kirigami' 'ki18n' 'kcoreaddons' 'kwindowsystem' 'layer-shell-qt' 'qt6-declarative' 'kde-cli-tools')
 optdepends=('wireplumber: volume steps other than 1 %')
 makedepends=('cargo' 'cmake' 'ninja' 'extra-cmake-modules')
 # Build from the working tree: makepkg -p packaging/PKGBUILD (run in the repository root)

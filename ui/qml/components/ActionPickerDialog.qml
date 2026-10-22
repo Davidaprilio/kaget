@@ -16,6 +16,10 @@ Kirigami.Dialog {
     property string pending: ""
     property string pendingWhenRunning: "new"
     property string appId: ""
+    /// Choosing a control panel button instead of a gesture binding: the slot to replace, -1 to
+    /// add one, -2 when picking for a gesture.
+    property int panelIndex: -2
+    readonly property bool panelMode: panelIndex > -2
     property var apps: []
     readonly property bool systemOwned: tinfo.systemOwned ?? false
     readonly property var window: QQC2.ApplicationWindow.window
@@ -32,7 +36,7 @@ Kirigami.Dialog {
     }
     readonly property bool valid: {
         switch (tabs.currentIndex) {
-        case 0: return true;
+        case 0: return !panelMode || (pending !== "" && pending !== "none");
         case 1: return Helpers.isValidKeyCombo(keyField.text.trim());
         case 2: return shortcutField.text.trim() !== "";
         case 3: return cmdField.text.trim() !== "";
@@ -41,7 +45,7 @@ Kirigami.Dialog {
         return false;
     }
 
-    title: tinfo.longTitle ?? i18n("Choose action")
+    title: panelMode ? i18n("Control panel button") : (tinfo.longTitle ?? i18n("Choose action"))
     preferredWidth: Math.min((window?.width ?? 800) - Kirigami.Units.gridUnit * 2, Kirigami.Units.gridUnit * 34)
     padding: 0
     standardButtons: Kirigami.Dialog.Cancel
@@ -62,7 +66,29 @@ Kirigami.Dialog {
         return 0;
     }
 
+    /// Pick the action of a control panel button (`index` -1 adds a slot).
+    function openForPanel(index: int, action: string) {
+        panelIndex = index;
+        dialog.trigger = "";
+        tinfo = {};
+        current = action;
+        pending = action;
+        pendingWhenRunning = "new";
+        keyField.text = action.startsWith("key:") ? action.substring(4) : "";
+        shortcutField.text = action.startsWith("shortcut:") ? action.substring(9) : "";
+        cmdField.text = action.startsWith("cmd:") ? action.substring(4) : "";
+        appId = action.startsWith("app:") ? action.substring(4) : "";
+        search.text = "";
+        appSearch.text = "";
+        tabs.currentIndex = kindTab(action);
+        rebuild();
+        if (tabs.currentIndex === 4)
+            loadApps();
+        open();
+    }
+
     function openFor(trigger: string, tab: int) {
+        panelIndex = -2;
         dialog.trigger = trigger;
         tinfo = DaemonClient.triggerInfo(trigger);
         current = DaemonClient.actionFor(trigger);
@@ -83,6 +109,16 @@ Kirigami.Dialog {
     }
 
     function commit() {
+        if (panelMode) {
+            const slots = (DaemonClient.draft.panel?.controls ?? []).slice();
+            if (panelIndex >= 0 && panelIndex < slots.length)
+                slots[panelIndex] = "action:" + chosenAction;
+            else
+                slots.push("action:" + chosenAction);
+            DaemonClient.setDraftValue("panel.controls", slots);
+            close();
+            return;
+        }
         DaemonClient.setBinding(trigger, chosenAction, chosenAction.startsWith("app:") ? pendingWhenRunning : "");
         close();
     }
@@ -98,7 +134,9 @@ Kirigami.Dialog {
         const matches = (label, action, category) => q === "" || label.toLowerCase().includes(q)
                          || action.toLowerCase().includes(q) || (category ?? "").toLowerCase().includes(q);
         const general = i18nc("@title action category", "General");
-        if (systemOwned) {
+        if (panelMode) {
+            // a button must do something: no "not assigned" / "system" entries
+        } else if (systemOwned) {
             if (matches(i18n("System default"), "system", general))
                 actionModel.append({actionId: "", labelText: i18n("System default"), category: general, iconName: "preferences-desktop-gestures-touch",
                                     detail: i18n("Pass the gesture to the desktop (KWin keeps its animation)"), slider: false});
@@ -109,7 +147,7 @@ Kirigami.Dialog {
         const list = DaemonClient.actions;
         for (let i = 0; i < list.length; ++i) {
             const a = list[i];
-            if (a.action === "system")
+            if (a.action === "system" || (dialog.panelMode && a.action === "none"))
                 continue;
             const info = DaemonClient.actionInfo(a.action);
             if (!matches(info.label, a.action, info.category))
@@ -387,6 +425,8 @@ Kirigami.Dialog {
                     Layout.fillWidth: true
                 }
                 RowLayout {
+                    // a panel button always launches (RunAction has no "if running" choice)
+                    visible: !dialog.panelMode
                     Layout.fillWidth: true
                     Layout.margins: Kirigami.Units.largeSpacing
                     spacing: Kirigami.Units.largeSpacing

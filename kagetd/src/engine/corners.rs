@@ -1,11 +1,15 @@
 //! Single-contact gestures: corner hold and swipe, sliders with the continuation window, and
 //! NumberPad key touches.
 
-use super::outputs::Outputs;
-use super::{Axis, Engine, KEY_DOWN_S, MOVE_MM, SLIDER_HYSTERESIS, SWIPE_MM, Slider};
+use super::outputs::{Outputs, PanelEvent};
+use super::{
+    Axis, Engine, KEY_DOWN_S, MOVE_MM, PANEL_DEADZONE_MM, PANEL_GAIN, PANEL_STEP_MM, SLIDER_HYSTERESIS, SWIPE_MM, Slider,
+};
 
 /// Filter mode: a withheld corner touch shorter than this is replayed to the desktop as a tap.
 pub const CORNER_TAP_S: f64 = 0.25;
+/// Panel mode: a touch on a button column shorter than this (and without moving) presses it.
+pub const PANEL_TAP_S: f64 = 0.6;
 use crate::actions;
 use crate::tracker::{Contact, Tracker};
 use crate::triggers::{Corner, Dir, Edge, Trigger};
@@ -32,6 +36,9 @@ pub enum Role {
     Sticky { fallback: Box<Role>, win: Window },
     Slider { slider: Slider, corner: Corner },
     Key { codes: Vec<u16>, down: bool },
+    /// Panel mode: a finger in the column of a panel slider. Until it moved past the dead zone
+    /// (`engaged`), `x`/`y` is where it started; then `y` is where the last step was taken (mm).
+    PanelSlider { kind: String, column: usize, x: f64, y: f64, engaged: bool },
     /// A gesture fired; the rest of this touch is ignored.
     Done,
 }
@@ -51,6 +58,17 @@ impl Touch {
         self.role = Role::Pointer;
     }
 
+    pub fn on_panel(&self) -> bool {
+        matches!(self.role, Role::PanelSlider { .. })
+    }
+
+    /// Panel mode ended under the finger: ignore the rest of the touch.
+    pub fn leave_panel(&mut self) {
+        if self.on_panel() {
+            self.role = Role::Done;
+        }
+    }
+
     /// Filter mode: everything but plain pointer movement is withheld from the desktop.
     pub fn hidden(&self) -> bool {
         !matches!(self.role, Role::Pointer)
@@ -62,6 +80,7 @@ impl Touch {
             Role::Corner(_) => "corner",
             Role::Sticky { .. } | Role::Slider { .. } => "slider",
             Role::Key { .. } => "key",
+            Role::PanelSlider { .. } => "panel",
             Role::Done => "gesture",
         }
     }
@@ -108,11 +127,26 @@ impl Engine {
             || SWIPE_DIRS.iter().any(|&d| self.is_bound(&Trigger::CornerSwipe(corner, d).to_string()))
     }
 
+    /// Panel mode: the slider column under a point (the pad is split evenly, in panel order).
+    fn panel_role(&self, x: i32, y: i32) -> Option<Role> {
+        let kinds = &self.cfg.panel.controls;
+        if !self.panel_open || kinds.is_empty() {
+            return None;
+        }
+        let (mx, my) = self.geo.mm(x, y);
+        let n = kinds.len();
+        let column = ((mx / (self.geo.width_mm / n as f64)).floor().max(0.0) as usize).min(n - 1);
+        Some(Role::PanelSlider { kind: kinds[column].clone(), column, x: mx, y: my, engaged: false })
+    }
+
     fn classify_base(&self, c: &Contact) -> Role {
         if let Some(corner) = self.geo.corner_at(c.x, c.y)
             && self.corner_active(corner)
         {
             return Role::Corner(corner);
+        }
+        if let Some(r) = self.panel_role(c.x, c.y) {
+            return r;
         }
         if let Some(np) = &self.npad
             && np.active
@@ -135,6 +169,9 @@ impl Engine {
 
     fn classify(&mut self, c: &Contact, now: f64) -> Role {
         let base = self.classify_base(c);
+        if self.panel_open {
+            return base;
+        }
         if let Some(w) = &self.window {
             if now < w.until && self.in_window_band(w, c) {
                 return Role::Sticky { fallback: Box::new(base), win: w.clone() };
@@ -181,6 +218,44 @@ impl Engine {
         }
         self.fire(&trigger, &b.action, b.when_running, out);
         Role::Done
+    }
+
+    /// Panel mode: vertical finger movement adjusts the column's control (up = more).
+    #[allow(clippy::too_many_arguments)]
+    fn panel_slide(
+        &mut self,
+        c: &Contact,
+        kind: String,
+        column: usize,
+        (x, y): (f64, f64),
+        engaged: bool,
+        now: f64,
+        out: &mut dyn Outputs,
+    ) -> Role {
+        if !self.panel_open {
+            return Role::Done;
+        }
+        if crate::config::panel_slot_action(&kind).is_some() {
+            // a button column: only a tap counts (on lift)
+            return Role::PanelSlider { kind, column, x, y, engaged };
+        }
+        let (cx, cy) = self.mm(c);
+        if !engaged {
+            let (dx, dy) = (cx - x, cy - y);
+            if dy.abs() < PANEL_DEADZONE_MM || dy.abs() < dx.abs() {
+                return Role::PanelSlider { kind, column, x, y, engaged };
+            }
+            // real vertical movement: the slider follows from here on, without a jump
+            self.panel_last = now;
+            return Role::PanelSlider { kind, column, x: cx, y: cy, engaged: true };
+        }
+        if (y - cy).abs() < PANEL_STEP_MM {
+            return Role::PanelSlider { kind, column, x, y, engaged };
+        }
+        self.panel_last = now;
+        let delta = (y - cy) / self.geo.height_mm * 100.0 * PANEL_GAIN;
+        out.panel(PanelEvent::Adjust { kind: kind.clone(), delta });
+        Role::PanelSlider { kind, column, x, y: cy, engaged }
     }
 
     /// A continuation candidate moved: a swipe along the slider axis resumes the slider,
@@ -236,6 +311,10 @@ impl Engine {
                     }
                 }
             }
+            if let Role::PanelSlider { column, .. } = role {
+                self.panel_last = now;
+                out.panel(PanelEvent::Focus(Some(column)));
+            }
             self.touches.insert(c.slot, Touch { role, tid: c.tid, t0: c.t0 });
         }
         // 2. movement
@@ -249,7 +328,20 @@ impl Engine {
                 Role::Sticky { fallback, win } if moved > MOVE_MM => {
                     self.continue_or_fallback(c, *fallback, win, out)
                 }
+                // panel mode: a drag that starts in a corner still moves that column's slider
+                Role::Corner(corner) if self.panel_open && moved > MOVE_MM => {
+                    match self.panel_role(c.x0, c.y0) {
+                        Some(Role::PanelSlider { kind, column, x, y, engaged }) => {
+                            out.panel(PanelEvent::Focus(Some(column)));
+                            self.panel_slide(c, kind, column, (x, y), engaged, now, out)
+                        }
+                        _ => Role::Corner(corner),
+                    }
+                }
                 Role::Corner(corner) if moved > SWIPE_MM => self.corner_swipe(c, corner, out),
+                Role::PanelSlider { kind, column, x, y, engaged } => {
+                    self.panel_slide(c, kind, column, (x, y), engaged, now, out)
+                }
                 Role::Slider { mut slider, corner } => {
                     slider.slide(self.along(c, slider.axis), &mut self.steps);
                     self.flush_steps(out);
@@ -268,6 +360,16 @@ impl Engine {
             }
             let Some(t) = self.touches.remove(&slot) else { continue };
             let tap = now - t.t0 < CORNER_TAP_S;
+            // panel mode: a tap on a button column runs its action
+            if let Role::PanelSlider { kind, .. } = &t.role
+                && let Some(action) = crate::config::panel_slot_action(kind)
+                && now - t.t0 < PANEL_TAP_S
+                && tr.get(slot).is_some_and(|c| self.moved_mm(c) < MOVE_MM)
+            {
+                let action = action.to_string();
+                self.panel_last = now;
+                self.fire("panel", &action, None, out);
+            }
             if self.on_lift(t.role, now, out) && tap && !self.passive {
                 // a short withheld touch was a tap after all: let the desktop click
                 out.replay(&[t.tid]);
@@ -284,6 +386,14 @@ impl Engine {
                 return self.on_lift(*fallback, now, out);
             }
             Role::Corner(_) | Role::Pointer => return true,
+            Role::PanelSlider { kind, .. } => {
+                // the idle time before panel mode ends counts from the lift
+                self.panel_last = now;
+                out.panel(PanelEvent::Focus(None));
+                if kind == "scale" {
+                    out.panel(PanelEvent::Commit);
+                }
+            }
             Role::Key { codes, down } => {
                 if !down {
                     out.key(&codes, true);
@@ -334,6 +444,9 @@ impl Engine {
                     let trigger = Trigger::CornerHold(corner).to_string();
                     if self.moved_mm(c) < MOVE_MM && self.fire_trigger(&trigger, out) {
                         Role::Done
+                    } else if let Some(r @ Role::PanelSlider { column, .. }) = self.panel_role(c.x, c.y) {
+                        out.panel(PanelEvent::Focus(Some(column)));
+                        r
                     } else {
                         Role::Pointer
                     }

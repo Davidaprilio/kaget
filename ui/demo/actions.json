@@ -102,6 +102,12 @@
     "slider": false
   },
   {
+    "action": "kaget.panel",
+    "label": "Show / hide the touchpad control panel",
+    "category": "KAGeT",
+    "slider": false
+  },
+  {
     "action": "kwin:Overview",
     "label": "Toggle Overview",
     "category": "KWin",

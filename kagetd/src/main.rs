@@ -32,7 +32,7 @@ use config::Config;
 use dbus::{Command, Shared, SignalMsg, Snapshot};
 use device::TouchpadInfo;
 use engine::Engine;
-use engine::outputs::{Fired, Outputs};
+use engine::outputs::{Fired, Outputs, PanelEvent};
 use executor::Request;
 use filter::Filter;
 use geometry::Geometry;
@@ -47,6 +47,8 @@ const POLL_MS: i32 = 10;
 const CONFIG_POLL_S: f64 = 2.0;
 const RECONNECT_S: f64 = 1.0;
 const TOUCHES_INTERVAL_S: f64 = 1.0 / 60.0;
+/// The touchpad's size column changes the panel in steps of 5 %.
+const PANEL_SCALE_STEP: f64 = 0.05;
 
 static STOP: AtomicBool = AtomicBool::new(false);
 
@@ -145,6 +147,9 @@ struct MainOut<'a> {
     dirty: bool,
     /// Tracking ids the engine handed back to the desktop (filter mode).
     replays: Vec<i32>,
+    /// Panel mode: movement of the `scale` column (percent of its range) and whether to save it.
+    scale_delta: f64,
+    commit_scale: bool,
 }
 
 impl<'a> MainOut<'a> {
@@ -156,7 +161,7 @@ impl<'a> MainOut<'a> {
         node: &'a str,
         filter: bool,
     ) -> Self {
-        Self { kb, exec, signals, hidraw, node, filter, dirty: false, replays: Vec::new() }
+        Self { kb, exec, signals, hidraw, node, filter, dirty: false, replays: Vec::new(), scale_delta: 0.0, commit_scale: false }
     }
 }
 
@@ -212,6 +217,22 @@ impl Outputs for MainOut<'_> {
     fn replay(&mut self, tids: &[i32]) {
         self.replays.extend_from_slice(tids);
     }
+
+    fn panel(&mut self, ev: PanelEvent) {
+        match ev {
+            PanelEvent::Open | PanelEvent::Close => {
+                let _ = self.exec.send(Request::PanelWindow(ev == PanelEvent::Open));
+            }
+            PanelEvent::Adjust { kind, delta } if kind == "scale" => self.scale_delta += delta,
+            PanelEvent::Adjust { kind, delta } => {
+                let _ = self.exec.send(Request::AdjustControl { kind, delta });
+            }
+            PanelEvent::Focus(column) => {
+                let _ = self.signals.send(SignalMsg::PanelFocus(column.map_or(-1, |c| c as i32)));
+            }
+            PanelEvent::Commit => self.commit_scale = true,
+        }
+    }
 }
 
 /// A connected touchpad.
@@ -248,6 +269,10 @@ struct Daemon {
     commands: Receiver<Command>,
     pad: Option<Pad>,
     live: bool,
+    /// Panel size while it is being changed by the touchpad's size column (unrounded), and the
+    /// step last sent to the panel (saved as `panel.scale` when the finger lifts).
+    panel_scale: f64,
+    panel_scale_step: f64,
     last_touches: f64,
     touches_empty_sent: bool,
     dirty: bool,
@@ -343,6 +368,8 @@ impl Daemon {
     fn reload(&mut self, cfg: Config) {
         self.cfg_mtime = mtime(&self.cfg_path);
         let _ = self.exec.send(Request::Steps(cfg.steps.clone()));
+        self.panel_scale = cfg.panel.scale;
+        self.panel_scale_step = cfg.panel.scale;
         let reconnect = self.pad.as_ref().is_some_and(|p| {
             p.engine.npad.is_some() != cfg.numberpad.enabled || self.cfg.filter_mode() != cfg.filter_mode()
         });
@@ -428,6 +455,7 @@ impl Daemon {
             "numberpad": numberpad,
             "config_path": self.cfg_path.to_string_lossy(),
             "access": {"uinput": self.kb.is_some()},
+            "panel_open": self.pad.as_ref().is_some_and(|p| p.engine.panel_open()),
         })
         .to_string()
     }
@@ -452,6 +480,19 @@ impl Daemon {
             Command::Reload => {
                 let cfg = self.shared.lock().unwrap().config.clone();
                 self.reload(cfg);
+            }
+            Command::SetPanelScale(scale) => self.save_panel_scale(scale),
+            Command::SetPanelOpen(open) => {
+                if let Some(pad) = self.pad.as_mut() {
+                    let mut out = MainOut::new(self.kb.as_ref(), &self.exec, &self.signals, pad.hidraw.as_deref(), &pad.node, pad.filter.is_some());
+                    pad.engine.set_panel(open, sys::now(), &mut out);
+                    self.dirty |= out.dirty;
+                }
+            }
+            Command::PanelActivity => {
+                if let Some(pad) = self.pad.as_mut() {
+                    pad.engine.panel_activity(sys::now());
+                }
             }
             Command::SetLive(on) => {
                 self.live = on;
@@ -480,6 +521,40 @@ impl Daemon {
                     self.dirty |= out.dirty;
                 }
             }
+        }
+    }
+
+    fn save_panel_scale(&mut self, scale: f64) {
+        let (lo, hi) = config::PANEL_SCALE;
+        let scale = ((scale * 100.0).round() / 100.0).clamp(lo, hi);
+        self.panel_scale = scale;
+        self.panel_scale_step = scale;
+        if scale == self.cfg.panel.scale {
+            return;
+        }
+        let mut cfg = self.cfg.clone();
+        cfg.panel.scale = scale;
+        if let Err(e) = config::save(&self.cfg_path, &cfg) {
+            eprintln!("config: cannot write {}: {e}", self.cfg_path.display());
+        }
+        self.shared.lock().unwrap().config = cfg.clone();
+        self.reload(cfg);
+    }
+
+    /// Panel mode: apply the `scale` column's movement live in 5 % steps (a steady size instead of
+    /// one that follows every tremble), save it when the finger lifts.
+    fn panel_scale_events(&mut self, delta: f64, commit: bool) {
+        if delta != 0.0 {
+            let (lo, hi) = config::PANEL_SCALE;
+            self.panel_scale = (self.panel_scale + delta / 100.0 * (hi - lo)).clamp(lo, hi);
+            let step = ((self.panel_scale / PANEL_SCALE_STEP).round() * PANEL_SCALE_STEP).clamp(lo, hi);
+            if (step - self.panel_scale_step).abs() > 1e-9 {
+                self.panel_scale_step = step;
+                let _ = self.signals.send(SignalMsg::PanelScale(step));
+            }
+        }
+        if commit {
+            self.save_panel_scale(self.panel_scale_step);
         }
     }
 
@@ -562,6 +637,8 @@ impl Daemon {
             fl.process(&[], now, &|slot| engine.hidden(slot), &std::mem::take(&mut out.replays));
         }
         self.dirty |= out.dirty;
+        let (delta, commit) = (out.scale_delta, out.commit_scale);
+        self.panel_scale_events(delta, commit);
         alive
     }
 
@@ -626,6 +703,7 @@ fn run() -> i32 {
 
     let shared: Shared = Arc::new(Mutex::new(Snapshot { config: cfg.clone(), passive: true, ..Default::default() }));
     let (cmd_tx, cmd_rx) = mpsc::channel();
+    let controls = executor::Controls::default();
 
     // D-Bus first so a second instance fails here. The executor needs the connection, so D-Bus
     // requests reach it through a forwarding channel.
@@ -634,7 +712,13 @@ fn run() -> i32 {
         let conn = b
             .serve_at(
                 dbus::PATH,
-                dbus::Daemon { shared: shared.clone(), commands: cmd_tx.clone(), executor: proxy_tx.clone(), config_path: cfg_path.clone() },
+                dbus::Daemon {
+                    shared: shared.clone(),
+                    commands: cmd_tx.clone(),
+                    executor: proxy_tx.clone(),
+                    config_path: cfg_path.clone(),
+                    controls: controls.clone(),
+                },
             )?
             .build()?;
         // the builder would queue for a taken name; fail instead
@@ -655,7 +739,7 @@ fn run() -> i32 {
         Some(c) => dbus::spawn_signals(c.clone()),
         None => mpsc::channel().0,
     };
-    let exec = executor::spawn(conn.clone(), cfg.steps.clone(), signals.clone());
+    let exec = executor::spawn(conn.clone(), cfg.steps.clone(), signals.clone(), controls.clone());
     {
         let tx = exec.tx.clone();
         std::thread::spawn(move || {
@@ -689,6 +773,7 @@ fn run() -> i32 {
         }
     };
 
+    let panel_scale = cfg.panel.scale;
     let mut d = Daemon {
         cfg_mtime: mtime(&cfg_path),
         cfg,
@@ -701,6 +786,8 @@ fn run() -> i32 {
         commands: cmd_rx,
         pad: None,
         live: false,
+        panel_scale,
+        panel_scale_step: panel_scale,
         last_touches: 0.0,
         touches_empty_sent: true,
         dirty: false,

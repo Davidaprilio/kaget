@@ -8,3 +8,9 @@ Icon=input-touchpad
 Terminal=false
 Categories=Qt;KDE;Settings;HardwareSettings;
 Keywords=touchpad;gestures;numberpad;corner;swipe;
+Actions=panel;
+
+[Desktop Action panel]
+Name=Open the touchpad control panel
+Exec=kaget-panel --toggle
+Icon=view-media-equalizer

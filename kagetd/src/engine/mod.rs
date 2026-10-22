@@ -20,7 +20,7 @@ use crate::tracker::Tracker;
 use crate::triggers::Trigger;
 
 use corners::Touch;
-use outputs::{Fired, Outputs};
+use outputs::{Fired, Outputs, PanelEvent};
 
 /// Movement that cancels a hold or a key touch.
 pub const MOVE_MM: f64 = 4.838;
@@ -30,6 +30,13 @@ pub const SWIPE_MM: f64 = 7.0;
 pub const SLIDER_HYSTERESIS: f64 = 0.1;
 /// A NumberPad key touch held this long presses the key until lift.
 pub const KEY_DOWN_S: f64 = 0.12;
+/// Panel mode: moving a finger 1/1.25 of the pad's height covers a slider's whole range.
+pub const PANEL_GAIN: f64 = 1.25;
+/// Panel mode: a finger has to move this far vertically before its slider follows, so a resting,
+/// trembling finger changes nothing.
+pub const PANEL_DEADZONE_MM: f64 = 2.0;
+/// Panel mode: after that, movement is passed on in steps of this size (tremble below it is dropped).
+pub const PANEL_STEP_MM: f64 = 0.5;
 
 #[derive(Clone, Debug)]
 struct Bound {
@@ -95,6 +102,13 @@ pub struct Engine {
     multi: multi::Multi,
     /// Steps produced while sliding, fired after the borrow of the slider ends.
     steps: Vec<(String, String, Option<String>)>,
+    /// Time of the current frame / tick.
+    now: f64,
+    /// Passive mode: the pointer is switched off in KWin (NumberPad or panel mode).
+    pointer_off: bool,
+    /// Panel mode: the touchpad is divided into one slider column per panel control.
+    panel_open: bool,
+    panel_last: f64,
 }
 
 impl Engine {
@@ -115,6 +129,10 @@ impl Engine {
             window: None,
             multi: multi::Multi::default(),
             steps: Vec::new(),
+            now: 0.0,
+            pointer_off: false,
+            panel_open: false,
+            panel_last: 0.0,
         };
         e.rebuild_bindings();
         e
@@ -221,7 +239,13 @@ impl Engine {
                 if !np.op(op, out) {
                     return false;
                 }
+                self.update_pointer(out);
                 out.state_changed();
+                true
+            }
+            Action::Panel => {
+                let open = !self.panel_open;
+                self.set_panel(open, self.now, out);
                 true
             }
             _ => false,
@@ -239,6 +263,7 @@ impl Engine {
     /// Process one frame. The tracker already holds this frame's events; lifted contacts are
     /// removed by the caller afterwards.
     pub fn frame(&mut self, tr: &Tracker, now: f64, out: &mut dyn Outputs) {
+        self.now = now;
         if !self.enabled {
             self.touches.clear();
             return;
@@ -251,12 +276,56 @@ impl Engine {
 
     /// Timers without a new frame.
     pub fn tick(&mut self, tr: &Tracker, now: f64, out: &mut dyn Outputs) {
+        self.now = now;
         if !self.enabled {
             return;
         }
         self.single_timers(tr, now, out);
         self.multi_timers(tr, now, out);
         self.flush_steps(out);
+        // panel mode ends after a while without slider use (never under a sliding finger)
+        let hide_s = self.cfg.panel.auto_hide_s;
+        if self.panel_open && hide_s > 0.0 && now - self.panel_last >= hide_s && !self.touches.values().any(|t| t.on_panel()) {
+            self.set_panel(false, now, out);
+        }
+    }
+
+    /// Open or close panel mode. In passive mode the pointer is switched off meanwhile.
+    pub fn set_panel(&mut self, open: bool, now: f64, out: &mut dyn Outputs) {
+        self.now = now;
+        self.panel_last = now;
+        if open == self.panel_open {
+            return;
+        }
+        self.panel_open = open;
+        eprintln!("panel mode {}", if open { "on" } else { "off" });
+        out.panel(if open { PanelEvent::Open } else { PanelEvent::Close });
+        if !open {
+            for t in self.touches.values_mut() {
+                t.leave_panel();
+            }
+        }
+        self.update_pointer(out);
+        out.state_changed();
+    }
+
+    /// The panel window was used (mouse): keep panel mode open.
+    pub fn panel_activity(&mut self, now: f64) {
+        self.panel_last = now;
+    }
+
+    pub fn panel_open(&self) -> bool {
+        self.panel_open
+    }
+
+    /// Passive mode: the pointer is off while the NumberPad or panel mode is on.
+    fn update_pointer(&mut self, out: &mut dyn Outputs) {
+        let numberpad = self.npad.as_ref().is_some_and(|n| n.active);
+        let off = self.passive && self.enabled && (numberpad || self.panel_open);
+        if off != self.pointer_off {
+            self.pointer_off = off;
+            out.pointer(!off);
+        }
     }
 
     /// Forget all touches (device lost or events dropped); releases held keys.
@@ -276,6 +345,7 @@ impl Engine {
         if let Some(np) = self.npad.as_mut()
             && np.set_active(on, out)
         {
+            self.update_pointer(out);
             out.state_changed();
         }
     }
@@ -293,13 +363,17 @@ impl Engine {
         if let Some(np) = self.npad.as_mut() {
             np.set_active(active, out);
         }
+        if !on {
+            self.set_panel(false, self.now, out);
+        }
+        self.update_pointer(out);
         out.state_changed();
     }
 
-    /// RunAction for actions the daemon handles itself (NumberPad, pause). False if not local.
+    /// RunAction for actions the daemon handles itself (NumberPad, pause, panel). False if not local.
     pub fn run_local(&mut self, action: &str, out: &mut dyn Outputs) -> bool {
         match Action::parse(action) {
-            Ok(Action::NumberPad(_)) | Ok(Action::Pause) => {
+            Ok(Action::NumberPad(_)) | Ok(Action::Pause) | Ok(Action::Panel) => {
                 self.fire("dbus", action, None, out);
                 true
             }
@@ -309,9 +383,16 @@ impl Engine {
 
     pub fn shutdown(&mut self, out: &mut dyn Outputs) {
         self.reset(out);
-        if let Some(np) = self.npad.as_mut() {
-            np.shutdown(out);
+        if self.panel_open {
+            self.panel_open = false;
+            out.panel(PanelEvent::Close);
         }
+        match self.npad.as_mut() {
+            Some(np) => np.shutdown(out), // switches the pointer back on
+            None if self.pointer_off => out.pointer(true),
+            None => {}
+        }
+        self.pointer_off = false;
     }
 
     /// Role of a contact for the live view (`Touches` signal).

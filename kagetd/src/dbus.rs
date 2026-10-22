@@ -26,6 +26,12 @@ pub enum Command {
     SetLive(bool),
     /// Actions the main thread runs itself (keys, NumberPad, pause).
     RunLocal(String),
+    /// Save `panel.scale` (the panel's own size slider).
+    SetPanelScale(f64),
+    /// The panel window opened or closed itself (shortcut, Esc, click elsewhere).
+    SetPanelOpen(bool),
+    /// The panel window is being used with the mouse.
+    PanelActivity,
 }
 
 /// Signals from the daemon threads to the bus.
@@ -35,6 +41,11 @@ pub enum SignalMsg {
     Gesture(String, String),
     StateChanged,
     ActionFailed(String, String),
+    ControlsChanged(String),
+    /// Panel mode: live panel size while a finger drags the `scale` column.
+    PanelScale(f64),
+    /// Panel mode: column under the finger (-1: none).
+    PanelFocus(i32),
 }
 
 /// What D-Bus methods read; written by the main thread.
@@ -58,7 +69,10 @@ pub struct Daemon {
     pub commands: Sender<Command>,
     pub executor: Sender<Request>,
     pub config_path: PathBuf,
+    pub controls: crate::executor::Controls,
 }
+
+const CONTROL_KINDS: &[&str] = &["brightness", "volume", "keyboard_backlight"];
 
 fn triggers_json(s: &Snapshot, only_system: bool) -> String {
     let v: Vec<_> = Trigger::all(s.max_fingers)
@@ -141,7 +155,7 @@ impl Daemon {
                 eprintln!("RunAction {action}: {e}");
                 false
             }
-            Ok(Action::Keys(_) | Action::NumberPad(_) | Action::Pause) => {
+            Ok(Action::Keys(_) | Action::NumberPad(_) | Action::Pause | Action::Panel) => {
                 self.commands.send(Command::RunLocal(action)).is_ok()
             }
             Ok(_) => self.executor.send(Request::Run { action, when_running: None }).is_ok(),
@@ -154,6 +168,46 @@ impl Daemon {
 
     fn set_live(&self, live: bool) {
         let _ = self.commands.send(Command::SetLive(live));
+    }
+
+    /// Last read control values: `{brightness, volume, keyboard_backlight}` each with `available`,
+    /// `value` (percent) and extras (`muted`, `level`/`max`). Call `RefreshControls` for fresh values.
+    fn get_controls(&self) -> String {
+        let c = self.controls.lock().unwrap().clone();
+        if c.is_empty() { "{}".into() } else { c }
+    }
+
+    /// Re-read the controls; the result arrives as `ControlsChanged`.
+    fn refresh_controls(&self) {
+        let _ = self.executor.send(Request::RefreshControls);
+    }
+
+    /// Set `brightness`, `volume` or `keyboard_backlight` to `value` percent (no OSD).
+    fn set_control(&self, kind: String, value: f64) -> bool {
+        if !CONTROL_KINDS.contains(&kind.as_str()) || !value.is_finite() {
+            return false;
+        }
+        self.executor.send(Request::SetControl { kind, value }).is_ok()
+    }
+
+    /// Save the panel size; returns "" or an error.
+    fn set_panel_scale(&self, scale: f64) -> String {
+        let (lo, hi) = config::PANEL_SCALE;
+        if !scale.is_finite() || !(lo..=hi).contains(&scale) {
+            return format!("scale must be between {lo} and {hi}");
+        }
+        let _ = self.commands.send(Command::SetPanelScale(scale));
+        String::new()
+    }
+
+    /// The panel window opened / closed on its own: panel mode follows it.
+    fn set_panel_open(&self, open: bool) {
+        let _ = self.commands.send(Command::SetPanelOpen(open));
+    }
+
+    /// The panel window is in use: keeps panel mode from timing out.
+    fn panel_activity(&self) {
+        let _ = self.commands.send(Command::PanelActivity);
     }
 
     /// Called by the KWin helper script when an app has no window yet.
@@ -171,6 +225,15 @@ impl Daemon {
     async fn state_changed(emitter: &SignalEmitter<'_>) -> zbus::Result<()>;
 
     #[zbus(signal)]
+    async fn panel_scale(emitter: &SignalEmitter<'_>, scale: f64) -> zbus::Result<()>;
+
+    #[zbus(signal)]
+    async fn panel_focus(emitter: &SignalEmitter<'_>, column: i32) -> zbus::Result<()>;
+
+    #[zbus(signal)]
+    async fn controls_changed(emitter: &SignalEmitter<'_>, json: &str) -> zbus::Result<()>;
+
+    #[zbus(signal)]
     async fn action_failed(emitter: &SignalEmitter<'_>, action: &str, error: &str) -> zbus::Result<()>;
 }
 
@@ -186,6 +249,9 @@ pub fn spawn_signals(conn: Connection) -> Sender<SignalMsg> {
                     SignalMsg::Touches(j) => conn.emit_signal(none, PATH, IFACE, "Touches", &(j.as_str(),)),
                     SignalMsg::Gesture(t, a) => conn.emit_signal(none, PATH, IFACE, "Gesture", &(t.as_str(), a.as_str())),
                     SignalMsg::StateChanged => conn.emit_signal(none, PATH, IFACE, "StateChanged", &()),
+                    SignalMsg::ControlsChanged(j) => conn.emit_signal(none, PATH, IFACE, "ControlsChanged", &(j.as_str(),)),
+                    SignalMsg::PanelScale(s) => conn.emit_signal(none, PATH, IFACE, "PanelScale", &(*s,)),
+                    SignalMsg::PanelFocus(c) => conn.emit_signal(none, PATH, IFACE, "PanelFocus", &(*c,)),
                     SignalMsg::ActionFailed(a, e) => {
                         conn.emit_signal(none, PATH, IFACE, "ActionFailed", &(a.as_str(), e.as_str()))
                     }

@@ -11,6 +11,20 @@ pub struct Fired {
     pub local: bool,
 }
 
+/// Touchpad panel mode (see `Engine::set_panel`).
+#[derive(Clone, Debug, PartialEq)]
+pub enum PanelEvent {
+    Open,
+    Close,
+    /// A finger moved in a slider column; `delta` is in percent of that control's range
+    /// (for `scale`: percent of the 50–200 % range).
+    Adjust { kind: String, delta: f64 },
+    /// Column under the finger (for highlighting), `None` when it lifts.
+    Focus(Option<usize>),
+    /// The finger on the `scale` column lifted: save the size.
+    Commit,
+}
+
 pub trait Outputs {
     fn fired(&mut self, f: &Fired);
     /// Press (`down`) or release key codes on the virtual keyboard.
@@ -24,6 +38,7 @@ pub trait Outputs {
     /// Filter mode: hand withheld contacts (by tracking id) to the desktop after all, replaying
     /// their frames (a short corner tap, a 3-finger swipe that turned out to be KDE's).
     fn replay(&mut self, _tids: &[i32]) {}
+    fn panel(&mut self, _ev: PanelEvent) {}
 }
 
 /// Records outputs for tests and `--replay`.
@@ -34,6 +49,7 @@ pub struct FakeOutputs {
     pub leds: Vec<u8>,
     pub pointer: Vec<bool>,
     pub replays: Vec<Vec<i32>>,
+    pub panel: Vec<PanelEvent>,
 }
 
 #[cfg(test)]
@@ -65,5 +81,8 @@ impl Outputs for FakeOutputs {
     fn state_changed(&mut self) {}
     fn replay(&mut self, tids: &[i32]) {
         self.replays.push(tids.to_vec());
+    }
+    fn panel(&mut self, ev: PanelEvent) {
+        self.panel.push(ev);
     }
 }

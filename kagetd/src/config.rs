@@ -21,6 +21,7 @@ pub struct Config {
     pub taps: Taps,
     pub steps: Steps,
     pub numberpad: NumberPadCfg,
+    pub panel: PanelCfg,
     pub bindings: Vec<Binding>,
 }
 
@@ -168,6 +169,41 @@ impl Default for Taps {
         Self { max_tap_ms: 250, double_tap_ms: 300, hold_ms: 500 }
     }
 }
+/// Touchpad control panel (`kaget-panel`): its slots from left to right. A slot is a built-in slider
+/// (`PANEL_CONTROLS`) or `action:<action>`, a button that runs the action (a tap in its column).
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(default)]
+pub struct PanelCfg {
+    pub controls: Vec<String>,
+    /// `bottom`, `top`, `center`, `top_left`, `top_right`, `bottom_left`, `bottom_right`.
+    pub position: String,
+    /// Size factor of the whole panel (the `scale` slider changes it live).
+    pub scale: f64,
+    /// Panel mode ends after this many seconds without slider use; 0 keeps it open.
+    pub auto_hide_s: f64,
+}
+
+pub const PANEL_CONTROLS: &[&str] = &["brightness", "volume", "keyboard_backlight", "scale"];
+pub const PANEL_MAX_SLOTS: usize = 6;
+
+/// The action of an `action:<action>` panel slot.
+pub fn panel_slot_action(slot: &str) -> Option<&str> {
+    slot.strip_prefix("action:")
+}
+pub const PANEL_POSITIONS: &[&str] = &["bottom", "top", "center", "top_left", "top_right", "bottom_left", "bottom_right"];
+pub const PANEL_SCALE: (f64, f64) = (0.5, 2.0);
+
+impl Default for PanelCfg {
+    fn default() -> Self {
+        Self {
+            controls: PANEL_CONTROLS.iter().map(|s| s.to_string()).collect(),
+            position: "bottom".into(),
+            scale: 1.0,
+            auto_hide_s: 3.0,
+        }
+    }
+}
+
 impl Default for NumberPadCfg {
     fn default() -> Self {
         Self { enabled: true, calculator_command: "kcalc".into() }
@@ -205,6 +241,7 @@ impl Default for Config {
             taps: Taps::default(),
             steps: Steps::default(),
             numberpad: NumberPadCfg::default(),
+            panel: PanelCfg::default(),
             bindings: default_bindings(),
         }
     }
@@ -215,6 +252,41 @@ pub const WHEN_RUNNING: &[&str] = &["new", "close", "focus", "minimize", "toggle
 impl Config {
     /// Check values and bindings; returns a human-readable error.
     pub fn validate(&self) -> Result<(), String> {
+        let p = &self.panel;
+        if p.controls.is_empty() {
+            return Err("panel.controls must list at least one control".into());
+        }
+        if p.controls.len() > PANEL_MAX_SLOTS {
+            return Err(format!("panel.controls: at most {PANEL_MAX_SLOTS} slots"));
+        }
+        for (i, c) in p.controls.iter().enumerate() {
+            if let Some(a) = panel_slot_action(c) {
+                match Action::parse(a) {
+                    Ok(Action::None | Action::System) => {
+                        return Err(format!("panel.controls: '{c}' does nothing"));
+                    }
+                    Ok(_) => {}
+                    Err(e) => return Err(format!("panel.controls: '{c}': {e}")),
+                }
+            } else if !PANEL_CONTROLS.contains(&c.as_str()) {
+                return Err(format!(
+                    "panel.controls: unknown control '{c}' (use {} or action:<action>)",
+                    PANEL_CONTROLS.join(", ")
+                ));
+            }
+            if p.controls[..i].contains(c) {
+                return Err(format!("panel.controls: '{c}' is listed twice"));
+            }
+        }
+        if !PANEL_POSITIONS.contains(&p.position.as_str()) {
+            return Err(format!("panel.position must be one of {}", PANEL_POSITIONS.join(", ")));
+        }
+        if !p.scale.is_finite() || p.scale < PANEL_SCALE.0 || p.scale > PANEL_SCALE.1 {
+            return Err(format!("panel.scale must be between {} and {}", PANEL_SCALE.0, PANEL_SCALE.1));
+        }
+        if !p.auto_hide_s.is_finite() || !(0.0..=60.0).contains(&p.auto_hide_s) {
+            return Err("panel.auto_hide_s must be between 0 and 60".into());
+        }
         if !MODES.contains(&self.general.mode.as_str()) {
             return Err(format!("general.mode must be one of {}", MODES.join(", ")));
         }
@@ -453,6 +525,31 @@ mod tests {
         c.area.enabled = false;
         assert_eq!(c.effective().area.right, 0.0);
         assert!(default_bindings().iter().all(|x| !x.trigger.starts_with("sidedrag.")));
+    }
+
+    #[test]
+    fn panel_validation() {
+        let mut c = Config::default();
+        c.panel.controls = vec!["volume".into(), "volume".into()];
+        assert!(c.validate().is_err());
+        let mut c = Config::default();
+        c.panel.controls = vec!["numpad".into()];
+        assert!(c.validate().is_err());
+        let mut c = Config::default();
+        c.panel.scale = 3.0;
+        assert!(c.validate().is_err());
+        let c: Config = toml::from_str("[panel]\ncontrols = [\"volume\", \"scale\"]\n").unwrap();
+        c.validate().unwrap();
+        let mut c = Config::default();
+        c.panel.controls = vec!["action:kwin:Overview".into(), "brightness".into(), "action:media.play_pause".into()];
+        c.validate().unwrap();
+        c.panel.controls.push("action:explode".into());
+        assert!(c.validate().is_err());
+        c.panel.controls = vec!["action:none".into()];
+        assert!(c.validate().is_err());
+        c.panel.controls = (0..7).map(|_| "volume".to_string()).collect();
+        assert!(c.validate().unwrap_err().contains("at most"));
+        assert_eq!(c.panel.position, "bottom");
     }
 
     #[test]

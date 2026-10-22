@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include "daemonclient.h"
+#include "actionicons.h"
 
 #include "demobackend.h"
 #include "helpers.h"
@@ -229,56 +230,6 @@ QString knownInverse(const QString &action)
     return {};
 }
 
-QString iconForAction(const QString &action)
-{
-    static const QHash<QString, QString> icons{
-        {u"none"_s, u"dialog-cancel"_s},
-        {u"system"_s, u"preferences-desktop-gestures-touch"_s},
-        {u"volume.up"_s, u"audio-volume-high"_s},
-        {u"volume.down"_s, u"audio-volume-low"_s},
-        {u"volume.mute"_s, u"audio-volume-muted"_s},
-        {u"brightness.up"_s, u"brightness-high"_s},
-        {u"brightness.down"_s, u"brightness-low"_s},
-        {u"keyboard_backlight.up"_s, u"input-keyboard-brightness"_s},
-        {u"keyboard_backlight.down"_s, u"input-keyboard-brightness"_s},
-        {u"media.play_pause"_s, u"media-playback-start"_s},
-        {u"media.next"_s, u"media-skip-forward"_s},
-        {u"media.previous"_s, u"media-skip-backward"_s},
-        {u"numberpad.toggle"_s, u"accessories-calculator"_s},
-        {u"numberpad.brightness_cycle"_s, u"brightness-high"_s},
-        {u"numberpad.brightness_up"_s, u"brightness-high"_s},
-        {u"numberpad.brightness_down"_s, u"brightness-low"_s},
-        {u"kaget.pause"_s, u"media-playback-pause"_s},
-        {u"kwin:Overview"_s, u"view-app-grid-symbolic"_s},
-        {u"kwin:ExposeAll"_s, u"view-grid-symbolic"_s},
-        {u"kwin:Expose"_s, u"view-grid-symbolic"_s},
-        {u"kwin:Show Desktop"_s, u"desktop"_s},
-        {u"kwin:Window Maximize"_s, u"window-maximize"_s},
-        {u"kwin:Window Minimize"_s, u"window-minimize"_s},
-        {u"kwin:Switch One Desktop to the Left"_s, u"go-previous-view"_s},
-        {u"kwin:Switch One Desktop to the Right"_s, u"go-next-view"_s},
-        {u"kwin:Window One Desktop to the Left"_s, u"arrow-left"_s},
-        {u"kwin:Window One Desktop to the Right"_s, u"arrow-right"_s},
-        {u"global:plasmashell:activate application launcher"_s, u"start-here-kde-plasma"_s},
-        {u"global:plasmashell:toggle do not disturb"_s, u"notifications-disabled"_s},
-    };
-    const auto it = icons.constFind(action);
-    if (it != icons.cend())
-        return it.value();
-    if (action.startsWith(u"key:"_s) || action.startsWith(u"shortcut:"_s))
-        return u"input-keyboard"_s;
-    if (action.startsWith(u"cmd:"_s))
-        return u"utilities-terminal"_s;
-    if (action.startsWith(u"kwin:"_s))
-        return u"kwin"_s;
-    if (action.startsWith(u"global:"_s))
-        return u"preferences-desktop-keyboard-shortcut"_s;
-    if (action.startsWith(u"numberpad."_s))
-        return u"accessories-calculator"_s;
-    if (action.startsWith(u"app:"_s))
-        return u"application-x-executable"_s;
-    return u"system-run"_s;
-}
 
 bool isIntegerKey(const QString &key)
 {
