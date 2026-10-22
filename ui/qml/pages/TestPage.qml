@@ -91,7 +91,7 @@ Kirigami.Page {
         anchors.centerIn: parent
         width: parent.width - Kirigami.Units.gridUnit * 4
         visible: !DaemonClient.connected && !DaemonClient.demo
-        icon.name: "input-touchpad"
+        icon.name: "io.github.kaget"
         text: i18n("The KAGeT daemon is not running")
         explanation: i18n("Touches can only be shown while kagetd is running.")
         helpfulAction: Kirigami.Action {

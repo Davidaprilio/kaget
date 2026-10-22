@@ -31,12 +31,12 @@ int main(int argc, char *argv[])
                      i18n("KDE Advanced Gesture Touchpad"),
                      KAboutLicense::Unknown);
     about.setDesktopFileName(u"io.github.kaget"_s);
-    about.setProgramLogo(QIcon::fromTheme(u"input-touchpad"_s));
+    about.setProgramLogo(QIcon::fromTheme(u"io.github.kaget"_s, QIcon(u":/icons/sc-apps-io.github.kaget.svg"_s)));
     // Reverse domain + "kaget" must not collide with the daemon's bus name
     // io.github.kaget, see KDBusService below.
     about.setOrganizationDomain("ui.kaget.github.io");
     KAboutData::setApplicationData(about);
-    QGuiApplication::setWindowIcon(QIcon::fromTheme(u"input-touchpad"_s));
+    QGuiApplication::setWindowIcon(QIcon::fromTheme(u"io.github.kaget"_s, QIcon(u":/icons/sc-apps-io.github.kaget.svg"_s)));
 
     QCommandLineParser parser;
     about.setupCommandLine(&parser);

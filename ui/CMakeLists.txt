@@ -13,6 +13,7 @@ include(KDEInstallDirs)
 include(KDECMakeSettings)
 include(KDECompilerSettings NO_POLICY_SCOPE)
 include(ECMSetupVersion)
+include(ECMInstallIcons)
 include(FeatureSummary)
 
 set(CMAKE_CXX_STANDARD 20)
@@ -89,6 +90,9 @@ qt_add_resources(kaget "kaget_demo_data"
         demo/system_gestures.json
 )
 
+# the app icon, also built in so it shows before (or without) the icon theme install
+qt_add_resources(kaget "kaget_icon" PREFIX "/" FILES icons/sc-apps-io.github.kaget.svg)
+
 target_include_directories(kaget PRIVATE ${CMAKE_CURRENT_BINARY_DIR} src)
 
 target_compile_definitions(kaget PRIVATE TRANSLATION_DOMAIN="kaget")
@@ -116,6 +120,7 @@ install(TARGETS kaget ${KDE_INSTALL_TARGETS_DEFAULT_ARGS})
 
 qt_add_executable(kaget-panel
     panel/main.cpp
+    panel/demorecorder.h panel/demorecorder.cpp
 )
 
 qt_add_qml_module(kaget-panel
@@ -130,6 +135,8 @@ qt_add_qml_module(kaget-panel
         panel/qml/PanelSlider.qml
         panel/qml/PanelButton.qml
 )
+
+qt_add_resources(kaget-panel "kaget_panel_icon" PREFIX "/" FILES icons/sc-apps-io.github.kaget.svg)
 
 target_include_directories(kaget-panel PRIVATE ${CMAKE_CURRENT_BINARY_DIR} panel src)
 target_compile_definitions(kaget-panel PRIVATE TRANSLATION_DOMAIN="kaget"
@@ -158,5 +165,17 @@ install(FILES panel/io.github.kaget.panel.desktop DESTINATION ${KDE_INSTALL_DATA
 # application entry (hidden from menus) so the portal knows the app id
 install(FILES panel/io.github.kaget.panel.desktop DESTINATION ${KDE_INSTALL_APPDIR})
 install(PROGRAMS io.github.kaget.desktop DESTINATION ${KDE_INSTALL_APPDIR})
+ecm_install_icons(ICONS
+        icons/sc-apps-io.github.kaget.svg
+        icons/16-apps-io.github.kaget.png
+        icons/22-apps-io.github.kaget.png
+        icons/24-apps-io.github.kaget.png
+        icons/32-apps-io.github.kaget.png
+        icons/48-apps-io.github.kaget.png
+        icons/64-apps-io.github.kaget.png
+        icons/128-apps-io.github.kaget.png
+        icons/256-apps-io.github.kaget.png
+    DESTINATION ${KDE_INSTALL_ICONDIR}
+    THEME hicolor)
 
 feature_summary(WHAT ALL INCLUDE_QUIET_PACKAGES FATAL_ON_MISSING_REQUIRED_PACKAGES)

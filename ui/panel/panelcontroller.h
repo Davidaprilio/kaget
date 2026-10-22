@@ -75,6 +75,14 @@ public:
     Q_INVOKABLE void userHide();
     /// Opened by starting the app: panel mode starts too.
     void showSelf();
+
+    // --record (demo video): drive the panel from a script
+    /// Draw the glass look even without a compositor blur (the recording adds the blur itself).
+    void setForceGlass(bool on) { m_forceGlass = on; m_effectsChecked = false; checkEffects(); }
+    void setFocusColumnForDemo(int column) { onPanelFocus(column); }
+    void flashForDemo(const QString &action) { Q_EMIT actionRan(action); }
+    QRectF cardRect() const { return m_card; }
+    bool blurShown() const { return m_blurAvailable && m_blurEnabled; }
     /// Where the glass card is inside the (larger, transparent) window: blur, vibrancy and the
     /// input region follow it.
     Q_INVOKABLE void setCardGeometry(qreal x, qreal y, qreal width, qreal height, qreal radius);
@@ -157,6 +165,7 @@ private:
     bool m_blurAvailable = true;
     bool m_contrastAvailable = false;
     bool m_effectsChecked = false;
+    bool m_forceGlass = false;
     bool m_blurEnabled = false;
     /// The compositor currently has a blur region from us.
     bool m_blurSent = false;

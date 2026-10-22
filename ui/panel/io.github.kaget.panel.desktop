@@ -4,7 +4,7 @@ Name=KAGeT Control Panel
 GenericName=Touchpad Control Panel
 Comment=Brightness, volume and keyboard backlight sliders on the touchpad
 Exec=kaget-panel --toggle
-Icon=view-media-equalizer
+Icon=io.github.kaget
 Terminal=false
 Categories=Qt;KDE;Utility;
 Keywords=touchpad;panel;brightness;volume;backlight;slider;kaget;
@@ -15,4 +15,4 @@ Actions=settings;
 [Desktop Action settings]
 Name=KAGeT Settings
 Exec=kaget
-Icon=input-touchpad
+Icon=io.github.kaget

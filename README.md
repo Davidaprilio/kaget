@@ -1,5 +1,9 @@
 # KAGeT – KDE Advanced Gesture Touchpad
 
+<p align="center">
+  <img src="assets/kaget-demo.gif" width="800" alt="KAGeT demo: holding a touchpad corner opens a glass control panel; sliding a finger in a touchpad column changes brightness, volume and the panel size; tapping a column runs an action">
+</p>
+
 Configurable touchpad gestures for KDE Plasma (Wayland) on any multitouch touchpad: corner holds and swipes,
 sliders (volume, brightness, keyboard backlight) with a continuation window, 3+ finger swipes, pinches, rotations,
 taps, double taps and side drags, plus optional ASUS NumberPad support.
@@ -8,9 +12,19 @@ taps, double taps and side drags, plus optional ASUS NumberPad support.
 |---|---|---|
 | `kagetd` – daemon | `kagetd/` | Rust |
 | `kaget` – settings app with touchpad visualizer | `ui/` | C++ / Qt 6 / QML / Kirigami |
+| `kaget-panel` – touchpad control panel (brightness, volume, keyboard backlight, action buttons) | `ui/panel/` | C++ / Qt 6 / QML |
 
 The app talks to the daemon only over D-Bus (`io.github.kaget`, `/io/github/kaget/Daemon`,
 `io.github.kaget.Daemon1`).
+
+## Touchpad map
+
+The settings app draws the touchpad to scale: drag the lines to resize the gesture areas, see what each corner
+and slider band is bound to, and watch your fingers live while you test.
+
+<p align="center">
+  <img src="assets/touchpad_map.png" width="640" alt="KAGeT touchpad map: gesture area lines, corner actions (KCalc, NumberPad, media, Konsole), slider bands for brightness and volume, and the multi-finger gesture area in the middle">
+</p>
 
 ## Modes
 

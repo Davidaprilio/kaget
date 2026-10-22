@@ -79,6 +79,7 @@ PanelController::PanelController(bool demo, QObject *parent)
     if (m_demo) {
         m_values = demoValues();
         m_controls = {u"brightness"_s, u"volume"_s, u"action:media.play_pause"_s, u"scale"_s};
+        m_labels.insert(u"media.play_pause"_s, i18n("Play / pause"));
         m_scale = 1.55;
         m_daemonRunning = true;
         return;
@@ -423,7 +424,7 @@ void PanelController::checkEffects()
 {
     // asked again on every update: the compositor's protocols are only known after the first
     // round-trip, and the blur effect can be switched on and off at any time
-    const bool blur = KWindowEffects::isEffectAvailable(KWindowEffects::BlurBehind);
+    const bool blur = m_forceGlass || KWindowEffects::isEffectAvailable(KWindowEffects::BlurBehind);
     const bool contrast = KWindowEffects::isEffectAvailable(KWindowEffects::BackgroundContrast);
     if (blur == m_blurAvailable && contrast == m_contrastAvailable && m_effectsChecked)
         return;

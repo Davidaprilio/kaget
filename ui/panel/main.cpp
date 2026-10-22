@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // kaget-panel: touchpad control panel (brightness, volume, keyboard backlight, panel size).
 // Single instance on io.github.kaget.Panel; starting it again toggles the running panel.
+#include "demorecorder.h"
 #include "panelcontroller.h"
 
 #include "kaget-version.h"
@@ -42,7 +43,7 @@ int main(int argc, char *argv[])
                      KAboutLicense::Unknown);
     about.setDesktopFileName(u"io.github.kaget.panel"_s);
     KAboutData::setApplicationData(about);
-    QGuiApplication::setWindowIcon(QIcon::fromTheme(u"input-touchpad"_s));
+    QGuiApplication::setWindowIcon(QIcon::fromTheme(u"io.github.kaget"_s, QIcon(u":/icons/sc-apps-io.github.kaget.svg"_s)));
 
     QCommandLineParser parser;
     about.setupCommandLine(&parser);
@@ -51,12 +52,15 @@ int main(int argc, char *argv[])
     QCommandLineOption demoOption(u"demo"_s, i18n("Sample values, no daemon."));
     QCommandLineOption screenshotOption(u"screenshot"_s, u"Render the panel to <file> and quit."_s, u"file"_s);
     screenshotOption.setFlags(QCommandLineOption::HiddenFromHelp);
-    parser.addOptions({toggleOption, backgroundOption, demoOption, screenshotOption});
+    QCommandLineOption recordOption(u"record"_s, u"Play a scripted demo and save its frames to <dir>."_s, u"dir"_s);
+    recordOption.setFlags(QCommandLineOption::HiddenFromHelp);
+    parser.addOptions({toggleOption, backgroundOption, demoOption, screenshotOption, recordOption});
     parser.process(app);
     about.processCommandLine(&parser);
 
     const QString screenshot = parser.value(screenshotOption);
-    const bool demo = parser.isSet(demoOption) || !screenshot.isEmpty();
+    const QString record = parser.value(recordOption);
+    const bool demo = parser.isSet(demoOption) || !screenshot.isEmpty() || !record.isEmpty();
     if (!screenshot.isEmpty()) {
         QQuickWindow::setGraphicsApi(QSGRendererInterface::Software);
         QApplication::setStyle(u"Breeze"_s);
@@ -89,6 +93,12 @@ int main(int argc, char *argv[])
     auto *window = qobject_cast<QQuickWindow *>(engine.rootObjects().constFirst());
     if (!window)
         return 1;
+
+    if (!record.isEmpty()) {
+        panel.setWindow(window);
+        startDemoRecording(window, &panel, record);
+        return app.exec();
+    }
 
     if (!screenshot.isEmpty()) {
         panel.setWindow(window);

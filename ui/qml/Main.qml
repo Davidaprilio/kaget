@@ -147,7 +147,7 @@ Kirigami.ApplicationWindow {
                 spacing: Kirigami.Units.largeSpacing
 
                 Kirigami.Icon {
-                    source: "input-touchpad"
+                    source: "qrc:/icons/sc-apps-io.github.kaget.svg"
                     implicitWidth: Kirigami.Units.iconSizes.large
                     implicitHeight: Kirigami.Units.iconSizes.large
                 }

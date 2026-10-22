@@ -36,7 +36,7 @@ FormCard.FormCardPage {
         RowLayout {
             spacing: Kirigami.Units.largeSpacing
             Kirigami.Icon {
-                source: "input-touchpad"
+                source: "qrc:/icons/sc-apps-io.github.kaget.svg"
                 implicitWidth: Kirigami.Units.iconSizes.huge
                 implicitHeight: Kirigami.Units.iconSizes.huge
             }

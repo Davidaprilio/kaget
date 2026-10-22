@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // Vertical glass slider (macOS Control Center style): value label on top, a translucent track with a
-// white fill clipped to its rounded shape, the icon inside at the bottom. Drag, click, scroll or arrow keys.
+// white fill with a flat top, the icon inside at the bottom. Drag, click, scroll or arrow keys.
 import QtQuick
 import QtQuick.Controls as QQC2
-import QtQuick.Effects
 import org.kde.kirigami as Kirigami
 
 Item {
@@ -121,44 +120,24 @@ Item {
                 border.color: root.dark ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.04)
             }
 
-            // the fill has a flat top edge and is clipped to the track's rounded shape
-            // (shader effect; the software renderer gets a plain rounded fill instead)
-            readonly property bool shaders: GraphicsInfo.api !== GraphicsInfo.Software
-            Item {
-                id: fillLayer
-                anchors.fill: parent
-                visible: !track.shaders
-                layer.enabled: track.shaders
-                Rectangle {
-                    id: fill
-                    anchors.bottom: parent.bottom
-                    width: parent.width
-                    height: root.fraction * parent.height
-                    color: root.dark ? Qt.rgba(1, 1, 1, 0.92) : "white"
-                    radius: track.shaders ? 0 : Math.min(track.radius, height / 2)
-                    Behavior on height {
-                        // mouse drags follow the pointer exactly; values from the touchpad glide
-                        enabled: !root.dragging
-                        NumberAnimation { duration: root.highlighted ? 90 : 220; easing.type: Easing.OutCubic }
-                    }
-                }
-            }
+            // the fill: flat top edge, rounded like the track at the bottom; near the top its top
+            // corners round off along the track's curve (per-corner radii, no shader needed)
             Rectangle {
-                id: trackShape
-                anchors.fill: parent
-                radius: track.radius
-                visible: false
-                layer.enabled: track.shaders
-                layer.smooth: true
-            }
-            MultiEffect {
-                visible: track.shaders
-                anchors.fill: parent
-                source: fillLayer
-                maskEnabled: true
-                maskSource: trackShape
-                maskThresholdMin: 0.5
-                maskSpreadAtMin: 1.0
+                id: fill
+                anchors.bottom: parent.bottom
+                width: parent.width
+                height: root.fraction * parent.height
+                readonly property real gapTop: parent.height - height
+                color: root.dark ? Qt.rgba(1, 1, 1, 0.92) : "white"
+                bottomLeftRadius: Math.min(track.radius, height)
+                bottomRightRadius: Math.min(track.radius, height)
+                topLeftRadius: Math.max(0, track.radius - gapTop)
+                topRightRadius: Math.max(0, track.radius - gapTop)
+                Behavior on height {
+                    // mouse drags follow the pointer exactly; values from the touchpad glide
+                    enabled: !root.dragging
+                    NumberAnimation { duration: root.highlighted ? 90 : 220; easing.type: Easing.OutCubic }
+                }
             }
 
             // focus / touchpad column ring
