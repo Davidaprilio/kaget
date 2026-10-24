@@ -120,23 +120,26 @@ Item {
                 border.color: root.dark ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.04)
             }
 
-            // the fill: flat top edge, rounded like the track at the bottom; near the top its top
-            // corners round off along the track's curve (per-corner radii, no shader needed)
-            Rectangle {
+            // the fill: a track-shaped rectangle cut off flat at the level, so at any height its edges
+            // stay inside the track's curve (rectangular clip, no shader needed)
+            Item {
                 id: fill
                 anchors.bottom: parent.bottom
                 width: parent.width
                 height: root.fraction * parent.height
-                readonly property real gapTop: parent.height - height
-                color: root.dark ? Qt.rgba(1, 1, 1, 0.92) : "white"
-                bottomLeftRadius: Math.min(track.radius, height)
-                bottomRightRadius: Math.min(track.radius, height)
-                topLeftRadius: Math.max(0, track.radius - gapTop)
-                topRightRadius: Math.max(0, track.radius - gapTop)
+                clip: true
                 Behavior on height {
                     // mouse drags follow the pointer exactly; values from the touchpad glide
                     enabled: !root.dragging
                     NumberAnimation { duration: root.highlighted ? 90 : 220; easing.type: Easing.OutCubic }
+                }
+
+                Rectangle {
+                    anchors.bottom: parent.bottom
+                    width: track.width
+                    height: track.height
+                    radius: track.radius
+                    color: root.dark ? Qt.rgba(1, 1, 1, 0.92) : "white"
                 }
             }
 
