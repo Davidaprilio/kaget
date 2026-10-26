@@ -810,6 +810,100 @@ fn filter_none_swallows_a_kde_gesture() {
     assert!(s.clone_sink().down().is_empty());
 }
 
+// ---- multi-finger robustness: sloppy landings, bouncing fingers, imperfect swipes -----------------
+
+const USER: &[(&str, &str)] = &[
+    ("swipe.3.down", "cmd:shot"),
+    ("swipe.4.left", "kwin:Window One Desktop to the Right"),
+    ("swipe.4.right", "kwin:Window One Desktop to the Left"),
+];
+const FOUR: &[(i32, i32, i32)] = &[(0, 1500, 1000), (1, 2000, 900), (2, 2500, 900), (3, 3000, 1000)];
+
+#[test]
+fn late_fourth_finger_still_makes_a_four_finger_swipe() {
+    let mut s = filter_sim(USER, true, false);
+    for (&(slot, x, y), t) in FOUR.iter().zip([0.0, 0.03, 0.06, 0.15]) {
+        s.touch(t, slot, x, y);
+    }
+    s.drag_all(0.16, FOUR, (-40, 0), 15); // ~19 mm left
+    s.lift_all(0.4, FOUR);
+    s.tick(1.0);
+    assert_eq!(s.out.actions(), ["kwin:Window One Desktop to the Right"]);
+    assert_eq!(s.out.fired[0].trigger, "swipe.4.left");
+    let t = s.clone_sink().touched();
+    assert!(!t.contains(&3) && !t.contains(&4), "KDE never got the gesture: {t:?}");
+}
+
+#[test]
+fn staggered_three_fingers_still_swipe() {
+    let mut s = filter_sim(USER, true, false);
+    for (&(slot, x, y), t) in THREE.iter().zip([0.0, 0.07, 0.16]) {
+        s.touch(t, slot, x, y);
+    }
+    s.drag_all(0.17, THREE, (0, 40), 12); // ~15 mm down
+    assert_eq!(s.out.actions(), ["cmd:shot"]);
+}
+
+#[test]
+fn slider_plus_two_fingers_is_not_a_session() {
+    let mut s = sim(G);
+    s.touch(0.0, 0, 100, 100);
+    let t = s.drag(0.0, 0, (100, 100), (40, 0), 10); // top left corner: brightness slider running
+    let before = s.out.count("brightness.up");
+    assert!(before >= 1);
+    s.touch(t + 0.01, 1, 2000, 1500);
+    s.touch(t + 0.02, 2, 2500, 1500);
+    s.drag(t + 0.02, 0, (500, 100), (40, 0), 15);
+    assert!(s.out.count("brightness.up") > before, "the slider keeps going");
+    assert!(s.out.fired.iter().all(|f| f.trigger == "corner.top_left.swipe.right"));
+}
+
+#[test]
+fn bouncing_finger_keeps_the_swipe() {
+    let mut s = filter_sim(USER, true, false);
+    s.touch_all(0.0, THREE);
+    s.tick(0.25);
+    let t = s.drag_all(0.25, THREE, (0, 20), 6); // ~4 mm down
+    // the middle finger loses contact for a moment and comes back as a new contact
+    s.lift(t, 1);
+    s.touch(t + 0.03, 1, 2000, 1000 + 6 * 20 + 20);
+    let moved: Vec<(i32, i32, i32)> = THREE.iter().map(|&(sl, x, y)| (sl, x, y + 6 * 20 + 20)).collect();
+    s.drag_all(t + 0.03, &moved, (0, 40), 10);
+    assert_eq!(s.out.actions(), ["cmd:shot"]);
+    assert!(!s.clone_sink().touched().contains(&3), "not handed to KDE");
+}
+
+#[test]
+fn bouncing_finger_does_not_jerk_a_slider() {
+    let mut s = filter_sim(&[("swipe.3.right", "volume.up")], true, false);
+    s.touch_all(0.0, THREE);
+    let t = s.drag_all(0.03, THREE, (31, 0), 20); // 20 mm right
+    let ups = s.out.count("volume.up");
+    assert!(ups >= 2, "{ups}");
+    s.lift(t, 2);
+    s.touch(t + 0.02, 2, 2500 + 620, 1000);
+    let moved: Vec<(i32, i32, i32)> = THREE.iter().map(|&(sl, x, y)| (sl, x + 620, y)).collect();
+    s.drag_all(t + 0.02, &moved, (31, 0), 10); // 10 mm further right
+    assert_eq!(s.out.count("volume.down"), 0, "no step back");
+    assert!(s.out.count("volume.up") > ups, "the slider keeps going");
+    assert!(!s.clone_sink().touched().contains(&3), "not handed to KDE");
+}
+
+#[test]
+fn extra_finger_after_a_fired_swipe_does_not_hand_it_to_kde() {
+    let mut s = filter_sim(&[("swipe.3.left", "kwin:Switch One Desktop to the Right")], true, false);
+    s.touch_all(0.0, THREE);
+    let t = s.drag_all(0.03, THREE, (-40, 0), 15);
+    assert_eq!(s.out.fired.len(), 1);
+    s.touch(t + 0.05, 3, 3000, 1500);
+    s.lift_all(t + 0.1, THREE);
+    s.lift(t + 0.1, 3);
+    s.tick(t + 1.0);
+    let c = s.clone_sink();
+    assert!(!c.touched().contains(&3), "{:?}", c.touched());
+    assert_eq!(clone_xs(&s, 1), [1500], "the frozen fingers never moved");
+}
+
 #[test]
 fn filter_numberpad_keys_are_withheld_and_pointer_stays_on() {
     let mut s = filter_sim(NP, false, true);

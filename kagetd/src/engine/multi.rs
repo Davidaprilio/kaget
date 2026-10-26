@@ -6,12 +6,15 @@ use std::collections::BTreeMap;
 use super::outputs::Outputs;
 use super::{Axis, Engine, SLIDER_HYSTERESIS, Slider};
 use crate::actions;
-use crate::tracker::Tracker;
+use crate::tracker::{Contact, Tracker};
 use crate::geometry::Geometry;
 use crate::triggers::{Dir, EDGES, Edge, Trigger};
 
 /// All fingers of a session land within this time of the first one.
 pub const LANDING_S: f64 = 0.08;
+/// A finger landing later than that still joins until this time, as long as nothing was recognised
+/// yet (and no finger is busy with a slider): the gesture then starts over from where the fingers are.
+pub const JOIN_S: f64 = 0.2;
 /// A tap or hold may not move more than this (per finger).
 pub const STILL_MM: f64 = 3.0;
 
@@ -35,8 +38,8 @@ struct Session {
     max_move: f64,
     /// A tap that ended just before this session (double tap / tap-hold).
     after_tap: Option<Tap>,
-    /// slot -> tracking id
-    tids: BTreeMap<usize, i32>,
+    /// Tracking ids of its fingers, also of those that lifted and touched down again.
+    tids: Vec<i32>,
     /// Filter mode: the fingers are withheld from the desktop...
     withhold: bool,
     /// ...until it turns out to be a desktop gesture after all.
@@ -113,6 +116,20 @@ fn motion(pairs: &[(Point, Point)]) -> Motion {
     }
 }
 
+/// Mean displacement (mm) of the session's fingers that were already down before this frame.
+fn shift(geo: &Geometry, s: &Session, live: &[&Contact]) -> (f64, f64) {
+    let d: Vec<(f64, f64)> = live
+        .iter()
+        .filter(|c| !c.fresh)
+        .filter_map(|c| {
+            let p = s.start.get(&c.slot)?;
+            let (x, y) = geo.mm(c.x, c.y);
+            Some((x - p.0, y - p.1))
+        })
+        .collect();
+    mean(&d)
+}
+
 impl Engine {
     pub(super) fn multi_owns(&self, slot: usize) -> bool {
         self.multi.session.as_ref().is_some_and(|s| s.start.contains_key(&slot))
@@ -144,13 +161,12 @@ impl Engine {
     fn reveal(s: &mut Session, out: &mut dyn Outputs) {
         if s.withhold && !s.revealed {
             s.revealed = true;
-            let tids: Vec<i32> = s.tids.values().copied().collect();
-            out.replay(&tids);
+            out.replay(&s.tids);
         }
     }
 
     fn tap_of(s: &Session) -> Tap {
-        Tap { n: s.n, tids: s.tids.values().copied().collect(), withheld: s.withhold && !s.revealed }
+        Tap { n: s.n, tids: s.tids.clone(), withheld: s.withhold && !s.revealed }
     }
 
     pub(super) fn multi_role(&self, slot: usize) -> Option<&'static str> {
@@ -204,7 +220,9 @@ impl Engine {
                 return;
             }
             let t_first = live.iter().map(|c| c.t0).fold(f64::INFINITY, f64::min);
-            let landed_together = live.iter().all(|c| c.t0 - t_first <= LANDING_S);
+            let span = live.iter().map(|c| c.t0 - t_first).fold(0.0, f64::max);
+            let busy = live.iter().any(|c| self.touches.get(&c.slot).is_some_and(|t| t.engaged()));
+            let landed_together = span <= LANDING_S || (span <= JOIN_S && !busy);
             let pts: Vec<(i32, i32)> = live.iter().map(|c| (c.x0, c.y0)).collect();
             let edge = side_edge(&self.geo, &pts);
             let after_tap = match self.multi.pending_tap.take() {
@@ -215,7 +233,9 @@ impl Engine {
                 }
                 None => None,
             };
-            let start = live.iter().map(|c| (c.slot, self.geo.mm(c.x0, c.y0))).collect();
+            // fingers that landed one by one: the gesture starts from where they are now
+            let start =
+                live.iter().map(|c| (c.slot, if span > LANDING_S { self.geo.mm(c.x, c.y) } else { self.geo.mm(c.x0, c.y0) })).collect();
             if landed_together {
                 // the fingers now belong to the session
                 for c in &live {
@@ -235,23 +255,44 @@ impl Engine {
                 state: if landed_together { State::Pending } else { State::Done },
                 max_move: 0.0,
                 after_tap,
-                tids: live.iter().map(|c| (c.slot, c.tid)).collect(),
+                tids: live.iter().map(|c| c.tid).collect(),
                 withhold,
                 revealed: false,
                 checked: false,
             });
         } else if let Some(s) = self.multi.session.as_mut() {
-            for c in live.iter().filter(|c| c.fresh) {
-                s.start.insert(c.slot, self.geo.mm(c.x0, c.y0));
-                s.tids.insert(c.slot, c.tid);
-                if c.t0 - s.t_first <= LANDING_S && matches!(s.state, State::Pending) {
-                    s.n += 1;
-                } else {
-                    // finger count changed mid-gesture: not ours
-                    s.state = State::Done;
-                    Self::reveal(s, out);
+            let fresh: Vec<_> = live.iter().filter(|c| c.fresh).collect();
+            if !fresh.is_empty() {
+                let mut d = shift(&self.geo, s, &live);
+                let count = live.len() as u32;
+                let pending = matches!(s.state, State::Pending);
+                if count > s.n {
+                    if pending && !s.revealed && fresh.iter().all(|c| c.t0 - s.t_first <= JOIN_S) {
+                        s.n = count;
+                        s.checked = false;
+                        if fresh.iter().any(|c| c.t0 - s.t_first > LANDING_S) {
+                            // a late finger: the gesture starts over from here, with it
+                            for c in &live {
+                                s.start.insert(c.slot, self.geo.mm(c.x, c.y));
+                            }
+                            d = (0.0, 0.0);
+                        }
+                    } else {
+                        // finger count changed mid-gesture: not ours, or (recognised already) its end
+                        if pending {
+                            Self::reveal(s, out);
+                        }
+                        s.state = State::Done;
+                    }
                 }
-                self.touches.remove(&c.slot);
+                // a finger that touched down again (or joined) carries on where the others are,
+                // so a running slider does not jump back
+                for c in fresh {
+                    let (x, y) = self.geo.mm(c.x0, c.y0);
+                    s.start.insert(c.slot, (x - d.0, y - d.1));
+                    s.tids.push(c.tid);
+                    self.touches.remove(&c.slot);
+                }
             }
             if s.edge.is_some() {
                 let pts: Vec<(i32, i32)> =

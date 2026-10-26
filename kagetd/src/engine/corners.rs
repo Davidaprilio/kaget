@@ -62,6 +62,11 @@ impl Touch {
         matches!(self.role, Role::PanelSlider { .. })
     }
 
+    /// Busy with a single-finger gesture of its own (it does not join a multi-finger gesture late).
+    pub fn engaged(&self) -> bool {
+        matches!(self.role, Role::Slider { .. } | Role::PanelSlider { .. } | Role::Done)
+    }
+
     /// Panel mode ended under the finger: ignore the rest of the touch.
     pub fn leave_panel(&mut self) {
         if self.on_panel() {
