@@ -64,6 +64,13 @@ impl Corner {
     pub fn is_bottom(self) -> bool {
         matches!(self, Corner::BottomLeft | Corner::BottomRight)
     }
+    /// Swipe directions from this corner: away from its two edges (diagonal: towards the centre),
+    /// never off the touchpad.
+    pub fn swipe_dirs(self) -> [Dir; 3] {
+        let h = if self.is_right() { Dir::Left } else { Dir::Right };
+        let v = if self.is_bottom() { Dir::Up } else { Dir::Down };
+        [h, v, Dir::Diagonal]
+    }
 }
 
 impl Edge {
@@ -111,7 +118,11 @@ impl Trigger {
             ["corner", c, "hold"] => Trigger::CornerHold(Corner::parse(c).ok_or_else(bad)?),
             ["corner", c, "taphold"] => Trigger::CornerTapHold(Corner::parse(c).ok_or_else(bad)?),
             ["corner", c, "swipe", d] => {
-                Trigger::CornerSwipe(Corner::parse(c).ok_or_else(bad)?, Dir::parse(d).ok_or_else(bad)?)
+                let (c, d) = (Corner::parse(c).ok_or_else(bad)?, Dir::parse(d).ok_or_else(bad)?);
+                if !c.swipe_dirs().contains(&d) {
+                    return Err(format!("{s}: a corner swipe goes towards the centre, not off the touchpad"));
+                }
+                Trigger::CornerSwipe(c, d)
             }
             ["sidedrag", e, n] => {
                 let n = fingers(n)?;
@@ -207,7 +218,7 @@ impl Trigger {
         for c in CORNERS {
             v.push(Trigger::CornerHold(c));
             v.push(Trigger::CornerTapHold(c));
-            for d in [Dir::Left, Dir::Right, Dir::Up, Dir::Down, Dir::Diagonal] {
+            for d in c.swipe_dirs() {
                 v.push(Trigger::CornerSwipe(c, d));
             }
         }
@@ -263,6 +274,9 @@ mod tests {
         assert!(Trigger::parse("sidedrag.top.5").is_err());
         assert!(Trigger::parse("swipe.3.diagonal").is_err());
         assert!(Trigger::parse("corner.center.hold").is_err());
+        assert!(Trigger::parse("corner.top_left.swipe.left").is_err(), "off the touchpad");
+        assert!(Trigger::parse("corner.bottom_right.swipe.down").is_err());
+        assert!(Trigger::parse("corner.bottom_right.swipe.up").is_ok());
     }
 
     #[test]

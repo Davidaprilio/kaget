@@ -120,19 +120,19 @@ fn release_key(codes: &[u16], out: &mut dyn Outputs) {
     out.key(&rev, false);
 }
 
-/// Direction of a swipe that started in `corner` (`up` only happens from the bottom corners).
+/// Direction of a swipe that started in `corner`; `None` when it heads off the touchpad.
 pub fn swipe_direction(dx: f64, dy: f64, corner: Corner) -> Option<Dir> {
-    if dx.abs() >= 2.0 * dy.abs() {
-        return Some(if dx > 0.0 { Dir::Right } else { Dir::Left });
-    }
-    if dy.abs() >= 2.0 * dx.abs() {
-        return Some(if dy > 0.0 { Dir::Down } else { Dir::Up });
-    }
-    let inward = if corner.is_bottom() { dy < 0.0 } else { dy > 0.0 };
-    inward.then_some(Dir::Diagonal)
+    let dir = if dx.abs() >= 2.0 * dy.abs() {
+        if dx > 0.0 { Dir::Right } else { Dir::Left }
+    } else if dy.abs() >= 2.0 * dx.abs() {
+        if dy > 0.0 { Dir::Down } else { Dir::Up }
+    } else if (dx < 0.0) == corner.is_right() && (dy < 0.0) == corner.is_bottom() {
+        Dir::Diagonal
+    } else {
+        return None;
+    };
+    corner.swipe_dirs().contains(&dir).then_some(dir)
 }
-
-const SWIPE_DIRS: [Dir; 5] = [Dir::Left, Dir::Right, Dir::Up, Dir::Down, Dir::Diagonal];
 
 impl Engine {
     fn hold_s(&self) -> f64 {
@@ -154,7 +154,7 @@ impl Engine {
     fn corner_active(&self, corner: Corner) -> bool {
         self.is_bound(&Trigger::CornerHold(corner).to_string())
             || self.is_bound(&Trigger::CornerTapHold(corner).to_string())
-            || SWIPE_DIRS.iter().any(|&d| self.is_bound(&Trigger::CornerSwipe(corner, d).to_string()))
+            || corner.swipe_dirs().iter().any(|&d| self.is_bound(&Trigger::CornerSwipe(corner, d).to_string()))
     }
 
     /// Panel mode: the slider column under a point (the pad is split evenly, in panel order).

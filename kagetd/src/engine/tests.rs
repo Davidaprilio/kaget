@@ -219,6 +219,29 @@ fn unbound_direction_does_nothing() {
 }
 
 #[test]
+fn swipe_off_the_touchpad_from_a_corner_is_pointer_movement() {
+    let mut s = filter_sim(G, false, false);
+    // top right corner, ~10 mm up to the edge: there is no corner.top_right.swipe.up
+    s.touch(0.0, 0, 3800, 300);
+    s.drag(0.0, 0, (3800, 300), (0, -30), 10);
+    assert_eq!(s.e.role(0), "pointer");
+    s.lift(0.1, 0);
+    s.tick(0.6);
+    assert!(s.out.fired.is_empty());
+    assert_eq!(clone_axis(&s, 1, sys::ABS_MT_POSITION_Y).last(), Some(&0), "the desktop got the movement");
+}
+
+#[test]
+fn diagonal_off_the_touchpad_is_not_a_diagonal() {
+    let mut s = sim(G);
+    // top left corner, moving down and to the left: not towards the centre
+    s.touch(0.0, 0, 240, 100);
+    s.drag(0.0, 0, (240, 100), (-20, 25), 9);
+    s.lift(0.1, 0);
+    assert!(s.out.fired.is_empty());
+}
+
+#[test]
 fn unbound_corner_is_ignored() {
     let mut s = sim(G);
     s.touch(0.0, 0, 100, 2200); // bottom left: no bindings

@@ -18,15 +18,6 @@
     "description": "Tap the top-left corner, then touch it again and hold still"
   },
   {
-    "trigger": "corner.top_left.swipe.left",
-    "group": "corners",
-    "fingers": 1,
-    "system_owned": false,
-    "available": true,
-    "reason": "",
-    "description": "Start in the top-left corner and move left more than 7 mm"
-  },
-  {
     "trigger": "corner.top_left.swipe.right",
     "group": "corners",
     "fingers": 1,
@@ -34,15 +25,6 @@
     "available": true,
     "reason": "",
     "description": "Start in the top-left corner and move right more than 7 mm"
-  },
-  {
-    "trigger": "corner.top_left.swipe.up",
-    "group": "corners",
-    "fingers": 1,
-    "system_owned": false,
-    "available": true,
-    "reason": "",
-    "description": "Start in the top-left corner and move up more than 7 mm"
   },
   {
     "trigger": "corner.top_left.swipe.down",
@@ -90,24 +72,6 @@
     "description": "Start in the top-right corner and move left more than 7 mm"
   },
   {
-    "trigger": "corner.top_right.swipe.right",
-    "group": "corners",
-    "fingers": 1,
-    "system_owned": false,
-    "available": true,
-    "reason": "",
-    "description": "Start in the top-right corner and move right more than 7 mm"
-  },
-  {
-    "trigger": "corner.top_right.swipe.up",
-    "group": "corners",
-    "fingers": 1,
-    "system_owned": false,
-    "available": true,
-    "reason": "",
-    "description": "Start in the top-right corner and move up more than 7 mm"
-  },
-  {
     "trigger": "corner.top_right.swipe.down",
     "group": "corners",
     "fingers": 1,
@@ -144,15 +108,6 @@
     "description": "Tap the bottom-left corner, then touch it again and hold still"
   },
   {
-    "trigger": "corner.bottom_left.swipe.left",
-    "group": "corners",
-    "fingers": 1,
-    "system_owned": false,
-    "available": true,
-    "reason": "",
-    "description": "Start in the bottom-left corner and move left more than 7 mm"
-  },
-  {
     "trigger": "corner.bottom_left.swipe.right",
     "group": "corners",
     "fingers": 1,
@@ -169,15 +124,6 @@
     "available": true,
     "reason": "",
     "description": "Start in the bottom-left corner and move up more than 7 mm"
-  },
-  {
-    "trigger": "corner.bottom_left.swipe.down",
-    "group": "corners",
-    "fingers": 1,
-    "system_owned": false,
-    "available": true,
-    "reason": "",
-    "description": "Start in the bottom-left corner and move down more than 7 mm"
   },
   {
     "trigger": "corner.bottom_left.swipe.diagonal",
@@ -216,15 +162,6 @@
     "description": "Start in the bottom-right corner and move left more than 7 mm"
   },
   {
-    "trigger": "corner.bottom_right.swipe.right",
-    "group": "corners",
-    "fingers": 1,
-    "system_owned": false,
-    "available": true,
-    "reason": "",
-    "description": "Start in the bottom-right corner and move right more than 7 mm"
-  },
-  {
     "trigger": "corner.bottom_right.swipe.up",
     "group": "corners",
     "fingers": 1,
@@ -232,15 +169,6 @@
     "available": true,
     "reason": "",
     "description": "Start in the bottom-right corner and move up more than 7 mm"
-  },
-  {
-    "trigger": "corner.bottom_right.swipe.down",
-    "group": "corners",
-    "fingers": 1,
-    "system_owned": false,
-    "available": true,
-    "reason": "",
-    "description": "Start in the bottom-right corner and move down more than 7 mm"
   },
   {
     "trigger": "corner.bottom_right.swipe.diagonal",

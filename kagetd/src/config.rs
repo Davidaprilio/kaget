@@ -390,11 +390,14 @@ pub fn save(path: &Path, cfg: &Config) -> std::io::Result<()> {
 }
 
 /// Load without creating or importing anything (for `--replay`).
-/// Parse a config file. Bindings of gestures that no longer exist (rotation) are dropped, so they
-/// do not make the whole file invalid.
+/// Parse a config file. Bindings of gestures that no longer exist (rotation, corner swipes off the
+/// touchpad) are dropped, so they do not make the whole file invalid.
 fn parse(text: &str) -> Result<Config, toml::de::Error> {
     let mut cfg: Config = toml::from_str(text)?;
-    cfg.bindings.retain(|b| !b.trigger.starts_with("rotate."));
+    cfg.bindings.retain(|b| {
+        let corner_swipe = b.trigger.starts_with("corner.") && b.trigger.contains(".swipe.");
+        !(b.trigger.starts_with("rotate.") || (corner_swipe && Trigger::parse(&b.trigger).is_err()))
+    });
     Ok(cfg)
 }
 
@@ -464,6 +467,7 @@ fn import_legacy() -> Option<Config> {
             } else {
                 format!("corner.{corner}.swipe.{}", rest.strip_prefix("swipe_")?)
             };
+            Trigger::parse(&trigger).ok()?;
             let a = a.as_str()?;
             let action = match a {
                 "toggle_numpad" => "numberpad.toggle".to_string(),
@@ -508,8 +512,9 @@ mod tests {
     }
 
     #[test]
-    fn removed_rotation_gestures_do_not_break_an_old_file() {
+    fn removed_gestures_do_not_break_an_old_file() {
         let text = "[gestures]\nrotate_deg = 25.0\n\n[[bindings]]\ntrigger = \"rotate.3.cw\"\naction = \"volume.up\"\n\n\
+                    [[bindings]]\ntrigger = \"corner.top_left.swipe.up\"\naction = \"volume.up\"\n\n\
                     [[bindings]]\ntrigger = \"swipe.3.up\"\naction = \"kwin:Overview\"\n";
         let c = parse(text).unwrap();
         c.validate().unwrap();
