@@ -30,6 +30,8 @@ pub enum Dir {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Trigger {
     CornerHold(Corner),
+    /// Tap a corner, then touch it again and hold.
+    CornerTapHold(Corner),
     CornerSwipe(Corner, Dir),
     SideDrag(Edge, u32),
     Swipe(u32, Dir),
@@ -107,6 +109,7 @@ impl Trigger {
         let bad = || format!("unknown trigger '{s}'");
         Ok(match p.as_slice() {
             ["corner", c, "hold"] => Trigger::CornerHold(Corner::parse(c).ok_or_else(bad)?),
+            ["corner", c, "taphold"] => Trigger::CornerTapHold(Corner::parse(c).ok_or_else(bad)?),
             ["corner", c, "swipe", d] => {
                 Trigger::CornerSwipe(Corner::parse(c).ok_or_else(bad)?, Dir::parse(d).ok_or_else(bad)?)
             }
@@ -136,7 +139,7 @@ impl Trigger {
 
     pub fn fingers(self) -> u32 {
         match self {
-            Trigger::CornerHold(_) | Trigger::CornerSwipe(..) => 1,
+            Trigger::CornerHold(_) | Trigger::CornerTapHold(_) | Trigger::CornerSwipe(..) => 1,
             Trigger::SideDrag(_, n) | Trigger::Swipe(n, _) => n,
             Trigger::PinchIn(n) | Trigger::PinchOut(n) => n,
             Trigger::Hold(n) | Trigger::Tap(n) | Trigger::DoubleTap(n) | Trigger::TapHold(n) => n,
@@ -145,7 +148,7 @@ impl Trigger {
 
     pub fn group(self) -> &'static str {
         match self {
-            Trigger::CornerHold(_) | Trigger::CornerSwipe(..) => "Corners",
+            Trigger::CornerHold(_) | Trigger::CornerTapHold(_) | Trigger::CornerSwipe(..) => "Corners",
             Trigger::SideDrag(..) => "Side drag",
             Trigger::Swipe(..) => "Swipe",
             Trigger::PinchIn(_) | Trigger::PinchOut(_) => "Pinch",
@@ -166,6 +169,9 @@ impl Trigger {
         let f = |n: u32| format!("{n}-finger");
         match self {
             Trigger::CornerHold(c) => format!("Hold a finger in the {} corner", c.name().replace('_', " ")),
+            Trigger::CornerTapHold(c) => {
+                format!("Tap the {} corner, then touch it again and hold", c.name().replace('_', " "))
+            }
             Trigger::CornerSwipe(c, d) => {
                 format!("Swipe {} starting in the {} corner", d.name(), c.name().replace('_', " "))
             }
@@ -200,6 +206,7 @@ impl Trigger {
         let mut v = Vec::new();
         for c in CORNERS {
             v.push(Trigger::CornerHold(c));
+            v.push(Trigger::CornerTapHold(c));
             for d in [Dir::Left, Dir::Right, Dir::Up, Dir::Down, Dir::Diagonal] {
                 v.push(Trigger::CornerSwipe(c, d));
             }
@@ -225,6 +232,7 @@ impl fmt::Display for Trigger {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             Trigger::CornerHold(c) => write!(f, "corner.{}.hold", c.name()),
+            Trigger::CornerTapHold(c) => write!(f, "corner.{}.taphold", c.name()),
             Trigger::CornerSwipe(c, d) => write!(f, "corner.{}.swipe.{}", c.name(), d.name()),
             Trigger::SideDrag(e, n) => write!(f, "sidedrag.{}.{n}", e.name()),
             Trigger::Swipe(n, d) => write!(f, "swipe.{n}.{}", d.name()),

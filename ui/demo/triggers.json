@@ -9,6 +9,15 @@
     "description": "Touch inside the top-left corner and hold still"
   },
   {
+    "trigger": "corner.top_left.taphold",
+    "group": "corners",
+    "fingers": 1,
+    "system_owned": false,
+    "available": true,
+    "reason": "",
+    "description": "Tap the top-left corner, then touch it again and hold still"
+  },
+  {
     "trigger": "corner.top_left.swipe.left",
     "group": "corners",
     "fingers": 1,
@@ -61,6 +70,15 @@
     "available": true,
     "reason": "",
     "description": "Touch inside the top-right corner and hold still"
+  },
+  {
+    "trigger": "corner.top_right.taphold",
+    "group": "corners",
+    "fingers": 1,
+    "system_owned": false,
+    "available": true,
+    "reason": "",
+    "description": "Tap the top-right corner, then touch it again and hold still"
   },
   {
     "trigger": "corner.top_right.swipe.left",
@@ -117,6 +135,15 @@
     "description": "Touch inside the bottom-left corner and hold still"
   },
   {
+    "trigger": "corner.bottom_left.taphold",
+    "group": "corners",
+    "fingers": 1,
+    "system_owned": false,
+    "available": true,
+    "reason": "",
+    "description": "Tap the bottom-left corner, then touch it again and hold still"
+  },
+  {
     "trigger": "corner.bottom_left.swipe.left",
     "group": "corners",
     "fingers": 1,
@@ -169,6 +196,15 @@
     "available": true,
     "reason": "",
     "description": "Touch inside the bottom-right corner and hold still"
+  },
+  {
+    "trigger": "corner.bottom_right.taphold",
+    "group": "corners",
+    "fingers": 1,
+    "system_owned": false,
+    "available": true,
+    "reason": "",
+    "description": "Tap the bottom-right corner, then touch it again and hold still"
   },
   {
     "trigger": "corner.bottom_right.swipe.left",

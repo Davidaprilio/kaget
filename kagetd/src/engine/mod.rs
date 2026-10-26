@@ -99,6 +99,8 @@ pub struct Engine {
     swallow: HashSet<String>,
     touches: BTreeMap<usize, Touch>,
     window: Option<corners::Window>,
+    /// A corner tap that may start a tap-and-hold.
+    corner_tap: Option<corners::CornerTap>,
     multi: multi::Multi,
     /// Steps produced while sliding, fired after the borrow of the slider ends.
     steps: Vec<(String, String, Option<String>)>,
@@ -127,6 +129,7 @@ impl Engine {
             swallow: HashSet::new(),
             touches: BTreeMap::new(),
             window: None,
+            corner_tap: None,
             multi: multi::Multi::default(),
             steps: Vec::new(),
             now: 0.0,
@@ -338,6 +341,7 @@ impl Engine {
             t.release(out);
         }
         self.touches.clear();
+        self.corner_tap = None;
         self.multi = multi::Multi::default();
     }
 

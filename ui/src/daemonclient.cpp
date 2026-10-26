@@ -1046,6 +1046,10 @@ QVariantMap DaemonClient::triggerInfo(const QString &trigger) const
             kind = u"corner_hold"_s;
             title = i18nc("@label corner gesture", "Hold");
             badge = u"⏱"_s;
+        } else if (p.at(2) == u"taphold"_s) {
+            kind = u"corner_taphold"_s;
+            title = i18nc("@label corner gesture", "Tap and hold");
+            badge = u"•⏱"_s;
         } else {
             kind = u"corner_swipe"_s;
             direction = p.value(3);

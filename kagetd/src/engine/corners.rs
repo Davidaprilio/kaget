@@ -26,6 +26,19 @@ pub struct Window {
     pub until: f64,
 }
 
+/// A short tap on a corner with a tap-and-hold binding: it may be the first half of one.
+#[derive(Clone, Debug)]
+pub struct CornerTap {
+    corner: Corner,
+    tid: i32,
+    /// Filter mode: withheld, replayed to the desktop as a click unless a tap-and-hold follows.
+    withheld: bool,
+    /// The next touch has to land on the same corner by then...
+    until: f64,
+    /// ...and this is it (slot).
+    again: Option<usize>,
+}
+
 #[derive(Clone, Debug)]
 pub enum Role {
     /// Not ours; KDE moves the pointer with it.
@@ -41,6 +54,17 @@ pub enum Role {
     PanelSlider { kind: String, column: usize, x: f64, y: f64, engaged: bool },
     /// A gesture fired; the rest of this touch is ignored.
     Done,
+}
+
+impl Role {
+    /// The corner of a corner touch (also of one that may continue a slider).
+    fn corner(&self) -> Option<Corner> {
+        match self {
+            Role::Corner(c) => Some(*c),
+            Role::Sticky { fallback, .. } => fallback.corner(),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -129,6 +153,7 @@ impl Engine {
 
     fn corner_active(&self, corner: Corner) -> bool {
         self.is_bound(&Trigger::CornerHold(corner).to_string())
+            || self.is_bound(&Trigger::CornerTapHold(corner).to_string())
             || SWIPE_DIRS.iter().any(|&d| self.is_bound(&Trigger::CornerSwipe(corner, d).to_string()))
     }
 
@@ -189,6 +214,52 @@ impl Engine {
     fn along(&self, c: &Contact, axis: Axis) -> f64 {
         let (x, y) = self.mm(c);
         if axis == Axis::X { x } else { y }
+    }
+
+    /// The corner tap did not start a tap-and-hold: it was a plain tap (a click for the desktop).
+    pub(super) fn flush_corner_tap(&mut self, out: &mut dyn Outputs) {
+        if let Some(t) = self.corner_tap.take()
+            && t.withheld
+        {
+            out.replay(&[t.tid]);
+        }
+    }
+
+    fn is_tap_again(&self, slot: usize) -> bool {
+        self.corner_tap.as_ref().is_some_and(|p| p.again == Some(slot))
+    }
+
+    /// A touch landed while a corner tap waits: the second half of a tap-and-hold if it is alone
+    /// on the same corner in time, otherwise the tap was just a tap.
+    fn corner_tap_landing(&mut self, c: &Contact, alone: bool, now: f64, out: &mut dyn Outputs) {
+        let Some(p) = self.corner_tap.as_mut() else { return };
+        if alone && p.again.is_none() && now <= p.until && self.geo.corner_at(c.x, c.y) == Some(p.corner) {
+            p.again = Some(c.slot);
+        } else {
+            self.flush_corner_tap(out);
+        }
+    }
+
+    /// A corner touch rested for the hold time: tap-and-hold right after a tap there, else hold;
+    /// drifted without a swipe: leave it to KDE (or the panel).
+    fn corner_held(&mut self, slot: usize, c: &Contact, corner: Corner, out: &mut dyn Outputs) -> Role {
+        let still = self.moved_mm(c) < MOVE_MM;
+        if self.is_tap_again(slot) {
+            if still && self.fire_trigger(&Trigger::CornerTapHold(corner).to_string(), out) {
+                // the tap was its first half: no click
+                self.corner_tap = None;
+                return Role::Done;
+            }
+            self.flush_corner_tap(out);
+        }
+        if still && self.fire_trigger(&Trigger::CornerHold(corner).to_string(), out) {
+            Role::Done
+        } else if let Some(r @ Role::PanelSlider { column, .. }) = self.panel_role(c.x, c.y) {
+            out.panel(PanelEvent::Focus(Some(column)));
+            r
+        } else {
+            Role::Pointer
+        }
     }
 
     /// A corner touch moved far enough: start its swipe action, a slider, or leave it to KDE.
@@ -303,10 +374,11 @@ impl Engine {
         let live = tr.live();
         // 1. new contacts
         for c in tr.contacts().filter(|c| c.fresh && !c.lifted) {
+            let alone = live == 1;
+            self.corner_tap_landing(c, alone, now, out);
             if self.multi_owns(c.slot) {
                 continue;
             }
-            let alone = live == 1;
             let role = if alone { self.classify(c, now) } else { Role::Pointer };
             if !alone {
                 // a second finger turns pending touches into a 2-finger gesture (owned by the system)
@@ -354,6 +426,10 @@ impl Engine {
                 }
                 r => r,
             };
+            if self.is_tap_again(slot) && t.role.corner().is_none() {
+                // the second touch became a swipe or pointer movement
+                self.flush_corner_tap(out);
+            }
             self.touches.insert(slot, t);
         }
         // 3. timers
@@ -375,7 +451,22 @@ impl Engine {
                 self.panel_last = now;
                 self.fire("panel", &action, None, out);
             }
-            if self.on_lift(t.role, now, out) && tap && !self.passive {
+            let still = tr.get(slot).is_some_and(|c| self.moved_mm(c) < MOVE_MM);
+            let again = self.is_tap_again(slot);
+            if again {
+                // tapped twice
+                self.flush_corner_tap(out);
+            }
+            let tap_corner = t
+                .role
+                .corner()
+                .filter(|&c| tap && still && !again && self.is_bound(&Trigger::CornerTapHold(c).to_string()));
+            let idle = self.on_lift(t.role, now, out);
+            if let Some(corner) = tap_corner {
+                // may be the first half of a tap-and-hold: hold the click back until that is clear
+                let until = now + self.cfg.taps.double_tap_ms as f64 / 1000.0;
+                self.corner_tap = Some(CornerTap { corner, tid: t.tid, withheld: !self.passive, until, again: None });
+            } else if idle && tap && !self.passive {
                 // a short withheld touch was a tap after all: let the desktop click
                 out.replay(&[t.tid]);
             }
@@ -422,6 +513,9 @@ impl Engine {
     }
 
     pub(super) fn single_timers(&mut self, tr: &Tracker, now: f64, out: &mut dyn Outputs) {
+        if self.corner_tap.as_ref().is_some_and(|p| p.again.is_none() && now > p.until) {
+            self.flush_corner_tap(out);
+        }
         let hold_s = self.hold_s();
         let slots: Vec<usize> = self.touches.keys().copied().collect();
         for slot in slots {
@@ -444,18 +538,7 @@ impl Engine {
                         other => other,
                     }
                 }
-                Role::Corner(corner) if held >= hold_s => {
-                    // still: run the hold action; drifted without a swipe: leave it to KDE
-                    let trigger = Trigger::CornerHold(corner).to_string();
-                    if self.moved_mm(c) < MOVE_MM && self.fire_trigger(&trigger, out) {
-                        Role::Done
-                    } else if let Some(r @ Role::PanelSlider { column, .. }) = self.panel_role(c.x, c.y) {
-                        out.panel(PanelEvent::Focus(Some(column)));
-                        r
-                    } else {
-                        Role::Pointer
-                    }
-                }
+                Role::Corner(corner) if held >= hold_s => self.corner_held(slot, c, corner, out),
                 r => r,
             };
             self.touches.insert(slot, t);

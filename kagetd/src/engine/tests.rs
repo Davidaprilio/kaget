@@ -340,6 +340,102 @@ fn pause_keeps_only_the_pause_binding() {
     assert!(!s.e.paused);
 }
 
+// ---- corner tap-and-hold ----------------------------------------------------------------------
+
+const TH: &[(&str, &str)] = &[
+    ("corner.top_right.taphold", "cmd:th"),
+    ("corner.top_right.hold", "cmd:hold"),
+    ("corner.top_right.swipe.down", "volume.down"),
+];
+
+fn corner_tap(s: &mut Sim, t: f64) {
+    s.touch(t, 0, 3900, 100);
+    s.lift(t + 0.1, 0);
+}
+
+#[test]
+fn corner_taphold_fires_instead_of_hold() {
+    let mut s = sim(TH);
+    corner_tap(&mut s, 0.0);
+    s.touch(0.25, 0, 3900, 100);
+    s.hold(0.25, 0.65, 0, 3900, 100);
+    s.lift(0.7, 0);
+    s.tick(1.5);
+    assert_eq!(s.out.actions(), ["cmd:th"]);
+}
+
+#[test]
+fn corner_hold_without_a_tap_stays_a_hold() {
+    let mut s = sim(TH);
+    s.touch(0.0, 0, 3900, 100);
+    s.hold(0.0, 0.45, 0, 3900, 100);
+    assert_eq!(s.out.actions(), ["cmd:hold"]);
+}
+
+#[test]
+fn corner_touch_too_long_after_the_tap_is_a_hold() {
+    let mut s = sim(TH);
+    corner_tap(&mut s, 0.0);
+    s.touch(0.5, 0, 3900, 100); // double_tap_ms (300) after the lift is over
+    s.hold(0.5, 0.9, 0, 3900, 100);
+    assert_eq!(s.out.actions(), ["cmd:hold"]);
+}
+
+#[test]
+fn corner_taphold_needs_the_same_corner() {
+    let mut s = sim(&[("corner.top_right.taphold", "cmd:th"), ("corner.top_left.hold", "cmd:left")]);
+    corner_tap(&mut s, 0.0);
+    s.touch(0.2, 0, 100, 100);
+    s.hold(0.2, 0.6, 0, 100, 100);
+    assert_eq!(s.out.actions(), ["cmd:left"]);
+}
+
+#[test]
+fn filter_corner_taphold_never_reaches_the_desktop() {
+    let mut s = filter_sim(TH, false, false);
+    corner_tap(&mut s, 0.0);
+    s.touch(0.25, 0, 3900, 100);
+    s.hold(0.25, 0.65, 0, 3900, 100);
+    s.lift(0.7, 0);
+    s.tick(3.0);
+    assert_eq!(s.out.actions(), ["cmd:th"]);
+    assert!(s.clone_sink().frames.is_empty(), "no click, no touch");
+}
+
+#[test]
+fn filter_corner_tap_clicks_once_no_taphold_follows() {
+    let mut s = filter_sim(TH, false, false);
+    corner_tap(&mut s, 0.0);
+    s.tick(0.3);
+    assert!(s.clone_sink().frames.is_empty(), "held back while a tap-and-hold may follow");
+    s.tick(0.45);
+    assert_eq!(s.clone_sink().touched(), [1].into());
+    assert!(s.clone_sink().down().is_empty());
+    assert!(s.out.fired.is_empty());
+}
+
+#[test]
+fn filter_corner_double_tap_is_two_clicks() {
+    let mut s = filter_sim(TH, false, false);
+    corner_tap(&mut s, 0.0);
+    corner_tap(&mut s, 0.2);
+    assert_eq!(s.clone_sink().touched(), [1, 2].into());
+    assert!(s.clone_sink().down().is_empty());
+    s.tick(1.0);
+    assert!(s.out.fired.is_empty());
+}
+
+#[test]
+fn filter_corner_tap_then_swipe_clicks_and_slides() {
+    let mut s = filter_sim(TH, false, false);
+    corner_tap(&mut s, 0.0);
+    s.touch(0.2, 0, 3900, 100);
+    s.drag(0.2, 0, (3900, 100), (0, 40), 14);
+    assert!(s.out.count("volume.down") >= 1);
+    assert!(!s.out.fired.iter().any(|f| f.action == "cmd:th" || f.action == "cmd:hold"));
+    assert_eq!(s.clone_sink().touched(), [1].into(), "the tap was a click, the swipe stays hidden");
+}
+
 // ---- M5: NumberPad ----------------------------------------------------------------------------
 
 const NP: &[(&str, &str)] = &[

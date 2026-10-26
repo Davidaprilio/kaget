@@ -88,6 +88,9 @@ Item {
             if (p[2] === "hold") {
                 r.kind = "corner_hold";
                 r.duration = 1500;
+            } else if (p[2] === "taphold") {
+                r.kind = "corner_taphold";
+                r.duration = 1700;
             } else {
                 r.kind = "corner_swipe";
                 r.dir = p[3] ?? "";
@@ -158,7 +161,8 @@ Item {
     function pathAt(spec, u, cfg, W, H) {
         const cw = cfg.corners?.width ?? 8, ch = cfg.corners?.height ?? 10;
         switch (spec.kind) {
-        case "corner_hold": {
+        case "corner_hold":
+        case "corner_taphold": {
             return [{x: spec.corner.endsWith("left") ? cw / 2 : W - cw / 2, y: spec.corner.startsWith("top") ? ch / 2 : H - ch / 2}];
         }
         case "corner_swipe": {
@@ -236,6 +240,13 @@ Item {
         switch (spec.kind) {
         case "corner_hold":
             ring = {x: pts[0].x, y: pts[0].y, r: 6.5, p: ease(seg(t, 0.12, 0.72))};
+            break;
+        case "corner_taphold":
+            o = Math.max(window01(t, 0.06, 0.18), window01(t, 0.32, 0.88));
+            if (t < 0.3)
+                rip = seg(t, 0.06, 0.3);
+            if (t >= 0.32)
+                ring = {x: pts[0].x, y: pts[0].y, r: 6.5, p: ease(seg(t, 0.36, 0.84))};
             break;
         case "tap":
             o = window01(t, 0.14, 0.3);
