@@ -38,6 +38,7 @@ QQC2.ItemDelegate {
     readonly property var actionData: (DaemonClient.actions, DaemonClient.actionInfo(effectiveAction))
     readonly property bool sliderCapable: info.kind === "corner_swipe" || info.kind === "swipe" || info.kind === "sidedrag"
     readonly property bool testable: DaemonClient.connected && effectiveAction !== "" && effectiveAction !== "system" && effectiveAction !== "none"
+                                     && !effectiveAction.startsWith("system:")
 
     hoverEnabled: selectable
     highlighted: selected

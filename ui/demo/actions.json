@@ -12,6 +12,12 @@
     "slider": false
   },
   {
+    "action": "system:4",
+    "label": "KDE 4-finger gesture (follows the fingers)",
+    "category": "General",
+    "slider": false
+  },
+  {
     "action": "volume.up",
     "label": "Volume up",
     "category": "Media",

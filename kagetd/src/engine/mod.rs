@@ -173,7 +173,11 @@ impl Engine {
             }
             self.swallow.remove(&b.trigger);
             let Ok(action) = Action::parse(a) else { continue };
-            let usable = reachable && (self.npad.is_some() || !matches!(action, Action::NumberPad(_)));
+            // `system:<n>` needs the clone (filter mode) and a gesture the desktop knows
+            let handover = matches!(t, Trigger::Swipe(..) | Trigger::PinchIn(_) | Trigger::PinchOut(_));
+            let usable = reachable
+                && (self.npad.is_some() || !matches!(action, Action::NumberPad(_)))
+                && (!matches!(action, Action::SystemAs(_)) || (!self.passive && handover));
             if usable {
                 self.bindings.insert(b.trigger.clone(), Bound { action: a.into(), when_running: b.when_running.clone() });
             } else {
@@ -227,7 +231,7 @@ impl Engine {
             }
         };
         let local = match parsed {
-            Action::None | Action::System => return false,
+            Action::None | Action::System | Action::SystemAs(_) => return false,
             Action::Pause => {
                 self.paused = !self.paused;
                 eprintln!("gestures {}", if self.paused { "paused" } else { "resumed" });

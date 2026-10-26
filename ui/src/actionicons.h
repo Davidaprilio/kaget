@@ -42,6 +42,8 @@ inline QString iconForAction(const QString &action)
     const auto it = icons.constFind(action);
     if (it != icons.cend())
         return it.value();
+    if (action.startsWith(QStringLiteral("system:")))
+        return QStringLiteral("preferences-desktop-gestures-touch");
     if (action.startsWith(QStringLiteral("key:")) || action.startsWith(QStringLiteral("shortcut:")))
         return QStringLiteral("input-keyboard");
     if (action.startsWith(QStringLiteral("cmd:")))

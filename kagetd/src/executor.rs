@@ -267,7 +267,7 @@ impl Executor {
 
     fn execute(&mut self, action: &str, when_running: Option<&str>, n: u32) -> Result<(), String> {
         match Action::parse(action)? {
-            Action::None | Action::System | Action::Pause | Action::NumberPad(_) => Ok(()),
+            Action::None | Action::System | Action::SystemAs(_) | Action::Pause | Action::NumberPad(_) => Ok(()),
             Action::Panel => Ok(()), // panel mode lives in the engine
             Action::Keys(_) => Err("key actions are sent by the main thread".into()),
             Action::Global { component, name } => {

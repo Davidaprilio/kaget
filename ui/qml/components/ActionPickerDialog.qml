@@ -149,10 +149,15 @@ Kirigami.Dialog {
             const a = list[i];
             if (a.action === "system" || (dialog.panelMode && a.action === "none"))
                 continue;
+            // handing a gesture to KWin with another finger count only fits KWin's own gestures
+            if (a.action.startsWith("system:") && (dialog.panelMode || !dialog.systemOwned))
+                continue;
             const info = DaemonClient.actionInfo(a.action);
             if (!matches(info.label, a.action, info.category))
                 continue;
             let detail = a.action === "none" ? i18n("Swallow the gesture") : a.action;
+            if (a.action.startsWith("system:"))
+                detail = i18n("Passed to KWin as a %1-finger gesture (live animation)", a.action.slice(7));
             actionModel.append({actionId: a.action, labelText: info.label, category: info.category || general, iconName: info.icon,
                                 detail: detail, slider: info.slider});
         }

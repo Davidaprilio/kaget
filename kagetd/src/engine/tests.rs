@@ -54,6 +54,9 @@ impl Sim {
     fn forward(&mut self, evs: &[InputEvent], t: f64) {
         let replays: Vec<i32> = self.out.replays.drain(..).flatten().collect();
         if let Some(f) = self.filt.as_mut() {
+            for (tids, extra) in self.out.extra.drain(..) {
+                f.add_fingers(&tids, &extra);
+            }
             let e = &self.e;
             f.process(evs, t, &|slot| e.hidden(slot), &replays);
         }
@@ -668,20 +671,24 @@ fn filter_sim(bindings: &[(&str, &str)], override_system: bool, numberpad: bool)
 
 /// Positions the clone ever reported for a tracking id.
 fn clone_xs(s: &Sim, tid: i32) -> Vec<i32> {
+    clone_axis(s, tid, sys::ABS_MT_POSITION_X)
+}
+
+fn clone_axis(s: &Sim, tid: i32, code: u16) -> Vec<i32> {
     let mut slot_tid = std::collections::BTreeMap::new();
     let mut slot = 0;
-    let mut xs = Vec::new();
+    let mut vs = Vec::new();
     for e in s.clone_sink().events().filter(|e| e.type_ == sys::EV_ABS) {
         match e.code {
             sys::ABS_MT_SLOT => slot = e.value,
             sys::ABS_MT_TRACKING_ID => {
                 slot_tid.insert(slot, e.value);
             }
-            sys::ABS_MT_POSITION_X if slot_tid.get(&slot) == Some(&tid) => xs.push(e.value),
+            c if c == code && slot_tid.get(&slot) == Some(&tid) => vs.push(e.value),
             _ => {}
         }
     }
-    xs
+    vs
 }
 
 #[test]
@@ -902,6 +909,68 @@ fn extra_finger_after_a_fired_swipe_does_not_hand_it_to_kde() {
     let c = s.clone_sink();
     assert!(!c.touched().contains(&3), "{:?}", c.touched());
     assert_eq!(clone_xs(&s, 1), [1500], "the frozen fingers never moved");
+}
+
+// ---- system:<n>: KWin's own gesture (and its animation) with a different finger count -------------
+
+/// Tracking id of the first synthesized finger in the clone.
+const EXTRA: i32 = 0xfff0;
+const QUADTAP: u16 = 0x14f;
+
+#[test]
+fn three_finger_swipe_up_reaches_kde_as_four_fingers() {
+    let mut s = filter_sim(&[("swipe.3.up", "system:4"), ("swipe.3.down", "cmd:shot")], true, false);
+    s.touch_all(0.0, THREE);
+    let t = s.drag_all(0.03, THREE, (0, -40), 12); // ~15 mm up: recognised, handed over
+    assert_eq!(s.out.actions(), ["system:4"]);
+    assert!(s.out.fired[0].local);
+    let c = s.clone_sink();
+    assert_eq!(c.down(), [1, 2, 3, EXTRA].into(), "KDE sees four fingers");
+    assert_eq!(c.key(QUADTAP), [1]);
+    // in line with the hand, one finger spacing right of it, and it took the whole way up
+    let xs = clone_xs(&s, EXTRA);
+    assert!(xs.iter().all(|&x| x == 3000), "{xs:?}");
+    let ys = clone_axis(&s, EXTRA, sys::ABS_MT_POSITION_Y);
+    assert_eq!((ys.first(), ys.last()), (Some(&1000), Some(&(1000 - 12 * 40))));
+    // it keeps following the hand live
+    let moved: Vec<(i32, i32, i32)> = THREE.iter().map(|&(sl, x, y)| (sl, x, y - 12 * 40)).collect();
+    let t = s.drag_all(t, &moved, (0, -40), 5);
+    assert_eq!(clone_axis(&s, EXTRA, sys::ABS_MT_POSITION_Y).last(), Some(&(1000 - 17 * 40)));
+    // the first lifted finger ends it
+    s.lift(t + 0.01, 0);
+    assert_eq!(s.clone_sink().down(), [2, 3].into());
+    s.lift(t + 0.02, 1);
+    s.lift(t + 0.02, 2);
+    assert!(s.clone_sink().down().is_empty());
+    assert_eq!(s.out.fired.len(), 1);
+}
+
+#[test]
+fn synthesized_finger_goes_where_there_is_room() {
+    let mut s = filter_sim(&[("swipe.3.down", "system:4")], true, false);
+    let right = &[(0, 2800, 800), (1, 3250, 700), (2, 3700, 800)];
+    s.touch_all(0.0, right);
+    s.drag_all(0.03, right, (0, 40), 12);
+    assert_eq!(s.clone_sink().down(), [1, 2, 3, EXTRA].into());
+    let x = *clone_xs(&s, EXTRA).last().unwrap();
+    assert_eq!(x, 2800 - 450, "left of the hand, the right edge is too close");
+}
+
+#[test]
+fn other_directions_stay_three_finger_gestures() {
+    let mut s = filter_sim(&[("swipe.3.up", "system:4"), ("swipe.3.down", "system:4")], true, false);
+    s.touch_all(0.0, THREE);
+    s.drag_all(0.03, THREE, (-40, 0), 12);
+    assert!(s.out.fired.is_empty());
+    assert_eq!(s.clone_sink().down(), [1, 2, 3].into());
+}
+
+#[test]
+fn system_as_needs_filter_mode() {
+    let mut s = sim(&[("swipe.5.up", "system:4")]);
+    s.touch_all(0.0, FIVE);
+    s.drag_all(0.05, FIVE, (0, -30), 20);
+    assert!(s.out.fired.is_empty() && s.out.extra.is_empty());
 }
 
 #[test]

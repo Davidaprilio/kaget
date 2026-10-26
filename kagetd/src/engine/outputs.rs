@@ -11,6 +11,10 @@ pub struct Fired {
     pub local: bool,
 }
 
+/// Contacts handed to the desktop and the offsets (device units, from their centroid) of the
+/// synthesized fingers that follow them (`Outputs::replay_as`).
+pub type Handover = (Vec<i32>, Vec<(i32, i32)>);
+
 /// Touchpad panel mode (see `Engine::set_panel`).
 #[derive(Clone, Debug, PartialEq)]
 pub enum PanelEvent {
@@ -38,6 +42,11 @@ pub trait Outputs {
     /// Filter mode: hand withheld contacts (by tracking id) to the desktop after all, replaying
     /// their frames (a short corner tap, a 3-finger swipe that turned out to be KDE's).
     fn replay(&mut self, _tids: &[i32]) {}
+    /// Like `replay`, plus synthesized fingers at these offsets (device units) from the centroid of
+    /// `tids` that follow them, so the desktop sees a gesture with more fingers (`system:<n>`).
+    fn replay_as(&mut self, tids: &[i32], _extra: &[(i32, i32)]) {
+        self.replay(tids);
+    }
     fn panel(&mut self, _ev: PanelEvent) {}
 }
 
@@ -49,6 +58,8 @@ pub struct FakeOutputs {
     pub leds: Vec<u8>,
     pub pointer: Vec<bool>,
     pub replays: Vec<Vec<i32>>,
+    /// `replay_as`: the contacts and the synthesized fingers that follow them.
+    pub extra: Vec<Handover>,
     pub panel: Vec<PanelEvent>,
 }
 
@@ -81,6 +92,10 @@ impl Outputs for FakeOutputs {
     fn state_changed(&mut self) {}
     fn replay(&mut self, tids: &[i32]) {
         self.replays.push(tids.to_vec());
+    }
+    fn replay_as(&mut self, tids: &[i32], extra: &[(i32, i32)]) {
+        self.replays.push(tids.to_vec());
+        self.extra.push((tids.to_vec(), extra.to_vec()));
     }
     fn panel(&mut self, ev: PanelEvent) {
         self.panel.push(ev);

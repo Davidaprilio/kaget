@@ -32,7 +32,7 @@ use config::Config;
 use dbus::{Command, Shared, SignalMsg, Snapshot};
 use device::TouchpadInfo;
 use engine::Engine;
-use engine::outputs::{Fired, Outputs, PanelEvent};
+use engine::outputs::{Fired, Handover, Outputs, PanelEvent};
 use executor::Request;
 use filter::Filter;
 use geometry::Geometry;
@@ -147,6 +147,8 @@ struct MainOut<'a> {
     dirty: bool,
     /// Tracking ids the engine handed back to the desktop (filter mode).
     replays: Vec<i32>,
+    /// ...some with synthesized fingers that follow them (`system:<n>`).
+    extra: Vec<Handover>,
     /// Panel mode: movement of the `scale` column (percent of its range) and whether to save it.
     scale_delta: f64,
     commit_scale: bool,
@@ -161,7 +163,19 @@ impl<'a> MainOut<'a> {
         node: &'a str,
         filter: bool,
     ) -> Self {
-        Self { kb, exec, signals, hidraw, node, filter, dirty: false, replays: Vec::new(), scale_delta: 0.0, commit_scale: false }
+        Self {
+            kb,
+            exec,
+            signals,
+            hidraw,
+            node,
+            filter,
+            dirty: false,
+            replays: Vec::new(),
+            extra: Vec::new(),
+            scale_delta: 0.0,
+            commit_scale: false,
+        }
     }
 }
 
@@ -218,6 +232,11 @@ impl Outputs for MainOut<'_> {
         self.replays.extend_from_slice(tids);
     }
 
+    fn replay_as(&mut self, tids: &[i32], extra: &[(i32, i32)]) {
+        self.replays.extend_from_slice(tids);
+        self.extra.push((tids.to_vec(), extra.to_vec()));
+    }
+
     fn panel(&mut self, ev: PanelEvent) {
         match ev {
             PanelEvent::Open | PanelEvent::Close => {
@@ -254,7 +273,8 @@ struct Pad {
 fn start_filter(reader: &Reader, info: &TouchpadInfo) -> Result<Filter<VirtualTouchpad>, String> {
     let clone = VirtualTouchpad::new(info).map_err(|e| format!("cannot create the touchpad clone: {e} (needs /dev/uinput)"))?;
     reader.grab(true).map_err(|e| format!("cannot grab the touchpad: {e}"))?;
-    Ok(Filter::new(clone, info.slots as usize, &info.keys))
+    Ok(Filter::new(clone, info.slots as usize, &info.keys)
+        .bounded((info.x.minimum, info.x.maximum), (info.y.minimum, info.y.maximum)))
 }
 
 struct Daemon {
@@ -624,6 +644,9 @@ impl Daemon {
                 pad.tracker.apply(&f.events, f.t);
                 pad.engine.frame(&pad.tracker, f.t, &mut out);
                 if let Some(fl) = pad.filter.as_mut() {
+                    for (tids, extra) in out.extra.drain(..) {
+                        fl.add_fingers(&tids, &extra);
+                    }
                     let engine = &pad.engine;
                     fl.process(&f.events, f.t, &|slot| engine.hidden(slot), &std::mem::take(&mut out.replays));
                 }
@@ -633,6 +656,9 @@ impl Daemon {
         let now = sys::now();
         pad.engine.tick(&pad.tracker, now, &mut out);
         if let Some(fl) = pad.filter.as_mut() {
+            for (tids, extra) in out.extra.drain(..) {
+                fl.add_fingers(&tids, &extra);
+            }
             let engine = &pad.engine;
             fl.process(&[], now, &|slot| engine.hidden(slot), &std::mem::take(&mut out.replays));
         }

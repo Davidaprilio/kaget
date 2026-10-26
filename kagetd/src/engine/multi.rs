@@ -3,9 +3,9 @@
 
 use std::collections::BTreeMap;
 
-use super::outputs::Outputs;
+use super::outputs::{Fired, Outputs};
 use super::{Axis, Engine, SLIDER_HYSTERESIS, Slider};
-use crate::actions;
+use crate::actions::{self, Action};
 use crate::tracker::{Contact, Tracker};
 use crate::geometry::Geometry;
 use crate::triggers::{Dir, EDGES, Edge, Trigger};
@@ -17,6 +17,9 @@ pub const LANDING_S: f64 = 0.08;
 pub const JOIN_S: f64 = 0.2;
 /// A tap or hold may not move more than this (per finger).
 pub const STILL_MM: f64 = 3.0;
+/// Synthesized fingers (`system:<n>`) stay this far from the left and right edge, where libinput
+/// would take them for a palm.
+pub const EXTRA_MARGIN_MM: f64 = 15.0;
 
 #[derive(Debug)]
 enum State {
@@ -130,6 +133,26 @@ fn shift(geo: &Geometry, s: &Session, live: &[&Contact]) -> (f64, f64) {
     mean(&d)
 }
 
+/// Where `k` synthesized fingers go: in line with the hand, one finger spacing apart beside its
+/// outermost finger (on the side with room). Offsets from the centroid, in device units.
+fn extra_fingers(geo: &Geometry, pts: &[Point], k: u32) -> Vec<(i32, i32)> {
+    let Some(&left) = pts.iter().min_by(|a, b| a.0.total_cmp(&b.0)) else { return Vec::new() };
+    let right = pts.iter().copied().max_by(|a, b| a.0.total_cmp(&b.0)).unwrap_or(left);
+    let c = mean(pts);
+    let gap = if pts.len() > 1 { ((right.0 - left.0) / (pts.len() - 1) as f64).clamp(12.0, 25.0) } else { 18.0 };
+    let room_right = geo.width_mm - EXTRA_MARGIN_MM - right.0;
+    let room_left = left.0 - EXTRA_MARGIN_MM;
+    let to_right = room_right >= k as f64 * gap || room_right >= room_left;
+    (1..=k)
+        .map(|i| {
+            let step = i as f64 * gap;
+            let (x, y) = if to_right { (right.0 + step, right.1) } else { (left.0 - step, left.1) };
+            let x = x.clamp(EXTRA_MARGIN_MM, (geo.width_mm - EXTRA_MARGIN_MM).max(EXTRA_MARGIN_MM));
+            (((x - c.0) * geo.ux).round() as i32, ((y - c.1) * geo.uy).round() as i32)
+        })
+        .collect()
+}
+
 impl Engine {
     pub(super) fn multi_owns(&self, slot: usize) -> bool {
         self.multi.session.as_ref().is_some_and(|s| s.start.contains_key(&slot))
@@ -202,10 +225,31 @@ impl Engine {
     }
 
     /// A recognised trigger: fire it, swallow it, or hand the fingers to the desktop.
-    fn take_or_reveal(&mut self, s: &mut Session, trigger: &str, out: &mut dyn Outputs) -> State {
+    fn take_or_reveal(&mut self, s: &mut Session, trigger: &str, tr: &Tracker, out: &mut dyn Outputs) -> State {
+        if let Some(b) = self.bound(trigger).cloned()
+            && let Ok(Action::SystemAs(f)) = Action::parse(&b.action)
+        {
+            return self.hand_over(s, trigger, &b.action, f, tr, out);
+        }
         if !self.fire_trigger(trigger, out) && !self.is_swallowed(trigger) {
             Self::reveal(s, out);
         }
+        State::Done
+    }
+
+    /// `system:<f>`: the desktop gets the gesture as one with `f` fingers. The missing ones are
+    /// synthesized beside the hand and follow it, so KWin runs its own gesture with its
+    /// finger-following animation (e.g. the 4-finger overview with three fingers).
+    fn hand_over(&mut self, s: &mut Session, trigger: &str, action: &str, f: u32, tr: &Tracker, out: &mut dyn Outputs) -> State {
+        if s.withhold && !s.revealed {
+            s.revealed = true;
+            // only the fingers still down: one that bounced would count twice
+            let down: Vec<&Contact> = s.start.keys().filter_map(|&slot| tr.get(slot)).filter(|c| !c.lifted).collect();
+            let pts: Vec<Point> = down.iter().map(|c| self.geo.mm(c.x, c.y)).collect();
+            let tids: Vec<i32> = down.iter().map(|c| c.tid).collect();
+            out.replay_as(&tids, &extra_fingers(&self.geo, &pts, f.saturating_sub(pts.len() as u32)));
+        }
+        out.fired(&Fired { trigger: trigger.into(), action: action.into(), when_running: None, local: true });
         State::Done
     }
 
@@ -337,14 +381,14 @@ impl Engine {
                         Self::reveal(&mut s, out);
                     }
                 }
-                self.recognise(&mut s, &m, now, out)
+                self.recognise(&mut s, &m, tr, now, out)
             }
             st => st,
         };
         self.multi.session = Some(s);
     }
 
-    fn recognise(&mut self, s: &mut Session, m: &Motion, now: f64, out: &mut dyn Outputs) -> State {
+    fn recognise(&mut self, s: &mut Session, m: &Motion, tr: &Tracker, now: f64, out: &mut dyn Outputs) -> State {
         let n = s.n;
         let g = self.cfg.gestures.clone();
         // side drag: all fingers started in the same band and moved inward
@@ -360,7 +404,7 @@ impl Engine {
             let trigger = Trigger::SideDrag(edge, n).to_string();
             if inward >= self.cfg.side_drag.min_travel_mm && (self.is_bound(&trigger) || self.is_swallowed(&trigger)) {
                 self.recognised(s, out);
-                return self.take_or_reveal(s, &trigger, out);
+                return self.take_or_reveal(s, &trigger, tr, out);
             }
         }
         let dist = m.d.0.hypot(m.d.1);
@@ -374,7 +418,10 @@ impl Engine {
                 Dir::Up
             };
             let trigger = Trigger::Swipe(n, dir).to_string();
-            let Some(b) = self.bound(&trigger).cloned() else { return self.take_or_reveal(s, &trigger, out) };
+            let Some(b) = self.bound(&trigger).cloned() else { return self.take_or_reveal(s, &trigger, tr, out) };
+            if let Ok(Action::SystemAs(f)) = Action::parse(&b.action) {
+                return self.hand_over(s, &trigger, &b.action, f, tr, out);
+            }
             if let Some(inverse) = actions::inverse(&b.action) {
                 let axis = if matches!(dir, Dir::Left | Dir::Right) { Axis::X } else { Axis::Y };
                 let sign = if matches!(dir, Dir::Left | Dir::Up) { -1.0 } else { 1.0 };
@@ -410,7 +457,7 @@ impl Engine {
             };
             if let Some(t) = pinch {
                 self.recognised(s, out);
-                return self.take_or_reveal(s, &t.to_string(), out);
+                return self.take_or_reveal(s, &t.to_string(), tr, out);
             }
         }
         self.multi_hold(s, now, out)

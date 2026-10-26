@@ -4,12 +4,15 @@
 //!
 //! Contacts are keyed by tracking id, and clone slots are allocated independently of the real
 //! slots, so a withheld touch can be replayed after its real slot was reused.
+//! A replay can bring extra, synthesized fingers (`system:<n>`): they follow the centroid of the
+//! replayed contacts and lift with the first of them, so the desktop sees a gesture with more fingers.
 //! A contact the desktop already saw and that becomes hidden (the first two fingers of a 3-finger
 //! session) is *frozen*: it stays down in the clone without moving. Its lift is delayed until it has
 //! been down for `TAP_SAFE_S`, so libinput never turns it into a 2-finger tap.
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::engine::outputs::Handover;
 use crate::sys::{self, InputEvent};
 
 /// libinput's tap timeout is 180 ms; a contact that stays down longer is never a tap.
@@ -18,6 +21,8 @@ const TAP_SAFE_S: f64 = 0.25;
 const KEEP_LIFTED_S: f64 = 2.0;
 /// Replays are paced and squeezed into at most this many frames.
 const MAX_REPLAY_FRAMES: usize = 20;
+/// Tracking ids of synthesized fingers (the desktop only tells contacts apart by slot).
+const EXTRA_TID: i32 = 0xfff0;
 
 /// Where the clone's frames go (the uinput device, or a recorder in tests).
 pub trait Sink {
@@ -43,6 +48,13 @@ struct Contact {
     lifted: Option<f64>,
 }
 
+/// A synthesized finger, at `offset` from the centroid of the contacts it follows.
+#[derive(Debug)]
+struct Extra {
+    clone_slot: usize,
+    offset: (i32, i32),
+}
+
 #[derive(Debug, Default)]
 struct HistFrame {
     updates: Vec<(i32, u16, i32)>,
@@ -65,6 +77,13 @@ pub struct Filter<S: Sink> {
     abs_xy: Option<(i32, i32)>,
     suppressed: BTreeSet<u16>,
     deferred: Vec<(i32, f64)>,
+    /// X and Y range of the clone (synthesized fingers stay inside).
+    bounds: ((i32, i32), (i32, i32)),
+    /// Asked for by `add_fingers`, put down with the next replay.
+    extra_request: Option<Handover>,
+    extra: Vec<Extra>,
+    /// The contacts the synthesized fingers follow.
+    extra_sources: Vec<i32>,
     out: Vec<InputEvent>,
 }
 
@@ -99,8 +118,24 @@ impl<S: Sink> Filter<S> {
             abs_xy: None,
             suppressed: BTreeSet::new(),
             deferred: Vec::new(),
+            bounds: ((i32::MIN, i32::MAX), (i32::MIN, i32::MAX)),
+            extra_request: None,
+            extra: Vec::new(),
+            extra_sources: Vec::new(),
             out: Vec::new(),
         }
+    }
+
+    /// X and Y range of the device; synthesized fingers are kept inside.
+    pub fn bounded(mut self, x: (i32, i32), y: (i32, i32)) -> Self {
+        self.bounds = (x, y);
+        self
+    }
+
+    /// With the next replay of `tids`, add fingers at these offsets from their centroid that
+    /// follow them (see `Outputs::replay_as`).
+    pub fn add_fingers(&mut self, tids: &[i32], offsets: &[(i32, i32)]) {
+        self.extra_request = Some((tids.to_vec(), offsets.to_vec()));
     }
 
     #[cfg(test)]
@@ -131,8 +166,8 @@ impl<S: Sink> Filter<S> {
         }
     }
 
-    /// Put a contact down in a free clone slot with the given axes.
-    fn announce(&mut self, tid: i32, axes: &BTreeMap<u16, i32>, now: f64) -> Option<usize> {
+    /// Put a touch down in a free clone slot with the given axes.
+    fn put_down(&mut self, tid: i32, axes: &BTreeMap<u16, i32>) -> Option<usize> {
         let cs = self.clone_slots.iter().position(Option::is_none)?;
         self.clone_slots[cs] = Some(tid);
         self.select(cs);
@@ -140,6 +175,12 @@ impl<S: Sink> Filter<S> {
         for (&code, &v) in axes {
             self.emit_axis(cs, code, v);
         }
+        Some(cs)
+    }
+
+    /// Put a contact down in a free clone slot with the given axes.
+    fn announce(&mut self, tid: i32, axes: &BTreeMap<u16, i32>, now: f64) -> Option<usize> {
+        let cs = self.put_down(tid, axes)?;
         if let Some(c) = self.contacts.get_mut(&tid) {
             c.clone_slot = Some(cs);
             c.t_clone = now;
@@ -152,6 +193,73 @@ impl<S: Sink> Filter<S> {
         self.select(cs);
         self.push(sys::EV_ABS, sys::ABS_MT_TRACKING_ID, -1);
         self.clone_slots[cs] = None;
+    }
+
+    // ---- synthesized fingers ----------------------------------------------------------------------
+
+    /// Centroid of the contacts the synthesized fingers follow; `None` once one of them is gone.
+    fn extra_centroid(&self) -> Option<(i32, i32)> {
+        let mut sum = (0i64, 0i64);
+        for t in &self.extra_sources {
+            let cs = self.contacts.get(t)?.clone_slot?;
+            sum.0 += self.clone_pos[cs].0 as i64;
+            sum.1 += self.clone_pos[cs].1 as i64;
+        }
+        let n = self.extra_sources.len().max(1) as i64;
+        (!self.extra_sources.is_empty()).then(|| ((sum.0 / n) as i32, (sum.1 / n) as i32))
+    }
+
+    fn extra_pos(&self, c: (i32, i32), offset: (i32, i32)) -> (i32, i32) {
+        let ((x0, x1), (y0, y1)) = self.bounds;
+        (c.0.saturating_add(offset.0).clamp(x0, x1), c.1.saturating_add(offset.1).clamp(y0, y1))
+    }
+
+    /// Put down the fingers asked for by `add_fingers`, beside the contacts they follow.
+    fn spawn_extra(&mut self) {
+        let Some((tids, offsets)) = self.extra_request.take() else { return };
+        self.lift_extra();
+        // pressure, size and tool type of a real finger
+        let Some(axes) = tids.iter().find_map(|t| self.contacts.get(t)).map(|c| c.axes.clone()) else { return };
+        self.extra_sources = tids;
+        let Some(c) = self.extra_centroid() else { return };
+        for (i, &offset) in offsets.iter().enumerate() {
+            let (x, y) = self.extra_pos(c, offset);
+            let mut axes = axes.clone();
+            axes.insert(sys::ABS_MT_POSITION_X, x);
+            axes.insert(sys::ABS_MT_POSITION_Y, y);
+            if let Some(clone_slot) = self.put_down(EXTRA_TID + i as i32, &axes) {
+                self.extra.push(Extra { clone_slot, offset });
+            }
+        }
+    }
+
+    /// Move the synthesized fingers with their contacts, or lift them once one of those is gone.
+    fn follow_extra(&mut self) {
+        if self.extra.is_empty() {
+            return;
+        }
+        let Some(c) = self.extra_centroid() else {
+            self.lift_extra();
+            return;
+        };
+        let moves: Vec<(usize, (i32, i32))> = self.extra.iter().map(|e| (e.clone_slot, self.extra_pos(c, e.offset))).collect();
+        for (cs, (x, y)) in moves {
+            if self.clone_pos[cs].0 != x {
+                self.emit_axis(cs, sys::ABS_MT_POSITION_X, x);
+            }
+            if self.clone_pos[cs].1 != y {
+                self.emit_axis(cs, sys::ABS_MT_POSITION_Y, y);
+            }
+        }
+    }
+
+    fn lift_extra(&mut self) {
+        for e in std::mem::take(&mut self.extra) {
+            self.select(e.clone_slot);
+            self.push(sys::EV_ABS, sys::ABS_MT_TRACKING_ID, -1);
+            self.clone_slots[e.clone_slot] = None;
+        }
+        self.extra_sources.clear();
     }
 
     /// BTN_TOUCH / BTN_TOOL_* and ABS_X/Y follow the contacts that are down in the clone.
@@ -203,6 +311,7 @@ impl<S: Sink> Filter<S> {
             }
             self.deferred.retain(|(t, _)| *t != tid);
         }
+        self.spawn_extra();
         let frames: Vec<&HistFrame> =
             self.history.iter().filter(|f| f.updates.iter().any(|u| set.contains(&u.0)) || f.lifts.iter().any(|t| set.contains(t))).collect();
         // squeeze into chunks; later absolute values win inside a chunk
@@ -232,6 +341,7 @@ impl<S: Sink> Filter<S> {
             for tid in lifts {
                 self.lift_clone(tid);
             }
+            self.follow_extra();
         }
         self.flush();
         for &tid in &set {
@@ -308,6 +418,7 @@ impl<S: Sink> Filter<S> {
         }
         // 2. the engine handed contacts back
         self.reveal(replays, now);
+        self.spawn_extra();
         // 3. visibility of live contacts
         let live: Vec<(usize, i32)> = self.slot_tid.iter().map(|(&s, &t)| (s, t)).collect();
         let mut announced: BTreeSet<i32> = BTreeSet::new();
@@ -353,6 +464,7 @@ impl<S: Sink> Filter<S> {
                 }
             }
         }
+        self.follow_extra();
         // 6. history of withheld contacts
         let withheld: BTreeSet<i32> = self.contacts.iter().filter(|(_, c)| !c.visible).map(|(t, _)| *t).collect();
         if withheld.is_empty() {
@@ -403,6 +515,8 @@ impl<S: Sink> Filter<S> {
 
     /// Lift everything in the clone and forget all state (events were dropped, or shutdown).
     pub fn reset(&mut self) {
+        self.lift_extra();
+        self.extra_request = None;
         let tids: Vec<i32> = self.clone_slots.iter().flatten().copied().collect();
         for t in tids {
             self.lift_clone(t);
