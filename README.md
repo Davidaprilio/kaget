@@ -5,7 +5,7 @@
 </p>
 
 Configurable touchpad gestures for KDE Plasma (Wayland) on any multitouch touchpad: corner holds and swipes,
-sliders (volume, brightness, keyboard backlight) with a continuation window, 3+ finger swipes, pinches, rotations,
+sliders (volume, brightness, keyboard backlight) with a continuation window, 3+ finger swipes, pinches,
 taps, double taps and side drags, plus optional ASUS NumberPad support.
 
 | Component | Path | Language |

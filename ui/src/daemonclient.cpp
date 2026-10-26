@@ -147,11 +147,6 @@ QString multiFingerTitle(const QString &kind, const QString &dir, int n)
             return i18nc("@label gesture", "%1-finger pinch in", n);
         if (dir == u"out"_s)
             return i18nc("@label gesture", "%1-finger pinch out", n);
-    } else if (kind == u"rotate"_s) {
-        if (dir == u"cw"_s)
-            return i18nc("@label gesture", "%1-finger rotate clockwise", n);
-        if (dir == u"ccw"_s)
-            return i18nc("@label gesture", "%1-finger rotate counter-clockwise", n);
     } else if (kind == u"hold"_s) {
         return i18nc("@label gesture", "%1-finger hold", n);
     } else if (kind == u"tap"_s) {
@@ -174,8 +169,6 @@ QString groupLabel(const QString &group)
         return i18nc("@title gesture group", "Swipe");
     if (group == u"pinch"_s)
         return i18nc("@title gesture group", "Pinch");
-    if (group == u"rotate"_s)
-        return i18nc("@title gesture group", "Rotate");
     if (group == u"taps"_s)
         return i18nc("@title gesture group", "Taps");
     return group.isEmpty() ? i18nc("@title gesture group", "Other") : group;
@@ -183,7 +176,7 @@ QString groupLabel(const QString &group)
 
 int groupOrder(const QString &group)
 {
-    static const QStringList order{u"corners"_s, u"side_drag"_s, u"swipe"_s, u"pinch"_s, u"rotate"_s, u"taps"_s};
+    static const QStringList order{u"corners"_s, u"side_drag"_s, u"swipe"_s, u"pinch"_s, u"taps"_s};
     const int i = order.indexOf(group);
     return i < 0 ? order.size() : i;
 }
@@ -202,8 +195,6 @@ QString normalizeGroup(const QString &raw)
         return u"swipe"_s;
     if (g.startsWith(u"pinch"_s))
         return u"pinch"_s;
-    if (g.startsWith(u"rotat"_s))
-        return u"rotate"_s;
     if (g.startsWith(u"tap"_s) || g.startsWith(u"hold"_s))
         return u"taps"_s;
     return raw;
@@ -1071,7 +1062,7 @@ QVariantMap DaemonClient::triggerInfo(const QString &trigger) const
         title = i18nc("@label side drag", "Drag in with %1 fingers", fingers);
         longTitle = i18nc("@label side drag, %1 edge name", "%1: drag in with %2 fingers", edgeName(edge), fingers);
         badge = i18nc("@label finger count badge, e.g. 3F ↓", "%1F %2", fingers, edgeArrow(edge));
-    } else if ((p.value(0) == u"swipe"_s || p.value(0) == u"pinch"_s || p.value(0) == u"rotate"_s) && p.size() >= 3) {
+    } else if ((p.value(0) == u"swipe"_s || p.value(0) == u"pinch"_s) && p.size() >= 3) {
         kind = p.at(0);
         group = kind;
         fingers = p.at(1).toInt();

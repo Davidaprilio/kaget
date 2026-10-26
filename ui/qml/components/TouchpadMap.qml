@@ -378,7 +378,7 @@ Item {
             y: (r.y + r.height / 2) * map.s - height / 2
             width: Math.min(r.width * map.s - Kirigami.Units.largeSpacing * 2, Kirigami.Units.gridUnit * 18)
             spacing: 2
-            readonly property int bound: (map.cfg.bindings ?? []).filter(b => /^(swipe|pinch|rotate|hold|tap|doubletap|taphold)\./.test(b.trigger)).length
+            readonly property int bound: (map.cfg.bindings ?? []).filter(b => /^(swipe|pinch|hold|tap|doubletap|taphold)\./.test(b.trigger)).length
 
             QQC2.Label {
                 width: parent.width

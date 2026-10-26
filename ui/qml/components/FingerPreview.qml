@@ -5,8 +5,7 @@ import org.kde.kirigami as Kirigami
 
 // Animated finger preview for one trigger, drawn on top of the touchpad map:
 // dots sliding in from the edge (side drags), moving dots (swipes), converging
-// or diverging dots (pinch), circling dots (rotate), pulses (taps) and a
-// filling ring (holds). All geometry is in millimetres, scaled by map.s.
+// or diverging dots (pinch), pulses (taps) and a filling ring (holds). All geometry is in millimetres, scaled by map.s.
 Item {
     id: fp
 
@@ -99,7 +98,7 @@ Item {
             r.edge = p[1];
             r.n = parseInt(p[2]);
             r.duration = 1400;
-        } else if (["swipe", "pinch", "rotate"].includes(p[0]) && p.length >= 3) {
+        } else if (["swipe", "pinch"].includes(p[0]) && p.length >= 3) {
             r.kind = p[0];
             r.n = parseInt(p[1]);
             r.dir = p[2];
@@ -211,16 +210,6 @@ Item {
             }
             return out;
         }
-        case "rotate": {
-            const c = centreOf(cfg, W, H);
-            const out = [];
-            const sweep = (spec.dir === "cw" ? 1 : -1) * 80 * u;
-            for (let i = 0; i < spec.n; ++i) {
-                const a = (-90 + i * 360 / spec.n + sweep) * Math.PI / 180;
-                out.push({x: c.x + 13 * Math.cos(a), y: c.y + 13 * Math.sin(a)});
-            }
-            return out;
-        }
         case "hold":
         case "tap":
         case "doubletap":
@@ -236,7 +225,7 @@ Item {
         const result = {dots: [], ring: null};
         if (spec.kind === "")
             return result;
-        const moving = ["corner_swipe", "sidedrag", "swipe", "pinch", "rotate"].includes(spec.kind);
+        const moving = ["corner_swipe", "sidedrag", "swipe", "pinch"].includes(spec.kind);
         const u = moving ? ease(seg(t, 0.15, 0.82)) : 0;
         const pts = pathAt(spec, u, cfg, W, H);
 
@@ -289,7 +278,7 @@ Item {
     }
 
     function computeTrails(spec, cfg, W, H, s) {
-        const moving = ["corner_swipe", "sidedrag", "swipe", "pinch", "rotate"].includes(spec.kind);
+        const moving = ["corner_swipe", "sidedrag", "swipe", "pinch"].includes(spec.kind);
         if (!moving)
             return [];
         const steps = 18;

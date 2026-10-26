@@ -103,7 +103,6 @@ pub struct Slider {
 pub struct Gestures {
     pub swipe_mm: f64,
     pub pinch_ratio: f64,
-    pub rotate_deg: f64,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -161,7 +160,7 @@ impl Default for Slider {
 }
 impl Default for Gestures {
     fn default() -> Self {
-        Self { swipe_mm: 12.0, pinch_ratio: 1.3, rotate_deg: 25.0 }
+        Self { swipe_mm: 12.0, pinch_ratio: 1.3 }
     }
 }
 impl Default for Taps {
@@ -391,10 +390,18 @@ pub fn save(path: &Path, cfg: &Config) -> std::io::Result<()> {
 }
 
 /// Load without creating or importing anything (for `--replay`).
+/// Parse a config file. Bindings of gestures that no longer exist (rotation) are dropped, so they
+/// do not make the whole file invalid.
+fn parse(text: &str) -> Result<Config, toml::de::Error> {
+    let mut cfg: Config = toml::from_str(text)?;
+    cfg.bindings.retain(|b| !b.trigger.starts_with("rotate."));
+    Ok(cfg)
+}
+
 pub fn load_readonly(path: &Path) -> Config {
     std::fs::read_to_string(path)
         .ok()
-        .and_then(|t| toml::from_str::<Config>(&t).ok())
+        .and_then(|t| parse(&t).ok())
         .filter(|c| c.validate().is_ok())
         .unwrap_or_default()
 }
@@ -403,7 +410,7 @@ pub fn load_readonly(path: &Path) -> Config {
 /// A broken file is left untouched and defaults are used.
 pub fn load(path: &Path) -> Config {
     match std::fs::read_to_string(path) {
-        Ok(text) => match toml::from_str::<Config>(&text) {
+        Ok(text) => match parse(&text) {
             Ok(cfg) => match cfg.validate() {
                 Ok(()) => cfg,
                 Err(e) => {
@@ -498,6 +505,16 @@ mod tests {
         let text = toml::to_string_pretty(&c).unwrap();
         let back: Config = toml::from_str(&text).unwrap();
         assert_eq!(c, back);
+    }
+
+    #[test]
+    fn removed_rotation_gestures_do_not_break_an_old_file() {
+        let text = "[gestures]\nrotate_deg = 25.0\n\n[[bindings]]\ntrigger = \"rotate.3.cw\"\naction = \"volume.up\"\n\n\
+                    [[bindings]]\ntrigger = \"swipe.3.up\"\naction = \"kwin:Overview\"\n";
+        let c = parse(text).unwrap();
+        c.validate().unwrap();
+        assert_eq!(c.bindings.len(), 1);
+        assert_eq!(c.bindings[0].trigger, "swipe.3.up");
     }
 
     #[test]

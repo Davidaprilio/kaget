@@ -36,8 +36,7 @@
   },
   "gestures": {
     "swipe_mm": 12.0,
-    "pinch_ratio": 1.3,
-    "rotate_deg": 25.0
+    "pinch_ratio": 1.3
   },
   "taps": {
     "max_tap_ms": 250,

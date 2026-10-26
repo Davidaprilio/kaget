@@ -623,28 +623,6 @@ fn pinch_five_in_and_out() {
 }
 
 #[test]
-fn rotate_three_clockwise() {
-    let mut s = sim(&[("rotate.3.cw", "cmd:cw"), ("rotate.3.ccw", "cmd:ccw")]);
-    let c = (2000.0, 1100.0);
-    let r = 400.0;
-    let fingers: Vec<(i32, f64)> = vec![(0, 0.0), (1, 120.0), (2, 240.0)];
-    let at = |a: f64| ((c.0 + r * a.to_radians().cos()) as i32, (c.1 + r * a.to_radians().sin()) as i32);
-    for (i, &(slot, a)) in fingers.iter().enumerate() {
-        let (x, y) = at(a);
-        s.touch(i as f64 * 0.01, slot, x, y);
-    }
-    for i in 1..=20 {
-        let mut evs = Vec::new();
-        for &(slot, a) in &fingers {
-            let (x, y) = at(a + 2.0 * i as f64); // +y is down: increasing angle is clockwise
-            evs.extend([abs(sys::ABS_MT_SLOT, slot), abs(sys::ABS_MT_POSITION_X, x), abs(sys::ABS_MT_POSITION_Y, y)]);
-        }
-        s.frame(&evs, 0.05 + i as f64 * 0.008);
-    }
-    assert_eq!(s.out.actions(), ["cmd:cw"]);
-}
-
-#[test]
 fn sidedrag_top_three() {
     let mut s = sim(&[("sidedrag.top.3", "kwin:Overview")]);
     let top = &[(0, 1500, 60), (1, 2000, 50), (2, 2500, 60)];

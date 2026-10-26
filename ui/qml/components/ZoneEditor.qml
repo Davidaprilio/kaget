@@ -54,7 +54,7 @@ ColumnLayout {
         if (zone === "centre") {
             return match(t => {
                 const p = t.split(".");
-                if (["swipe", "pinch", "rotate"].includes(p[0]))
+                if (["swipe", "pinch"].includes(p[0]))
                     return parseInt(p[1]) === fingers;
                 if (["hold", "tap", "doubletap", "taphold"].includes(p[0]))
                     return parseInt(p[1]) === fingers;

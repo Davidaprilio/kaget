@@ -35,8 +35,6 @@ pub enum Trigger {
     Swipe(u32, Dir),
     PinchIn(u32),
     PinchOut(u32),
-    RotateCw(u32),
-    RotateCcw(u32),
     Hold(u32),
     Tap(u32),
     DoubleTap(u32),
@@ -128,8 +126,6 @@ impl Trigger {
             }
             ["pinch", n, "in"] => Trigger::PinchIn(fingers(n)?),
             ["pinch", n, "out"] => Trigger::PinchOut(fingers(n)?),
-            ["rotate", n, "cw"] => Trigger::RotateCw(fingers(n)?),
-            ["rotate", n, "ccw"] => Trigger::RotateCcw(fingers(n)?),
             ["hold", n] => Trigger::Hold(fingers(n)?),
             ["tap", n] => Trigger::Tap(fingers(n)?),
             ["doubletap", n] => Trigger::DoubleTap(fingers(n)?),
@@ -142,7 +138,7 @@ impl Trigger {
         match self {
             Trigger::CornerHold(_) | Trigger::CornerSwipe(..) => 1,
             Trigger::SideDrag(_, n) | Trigger::Swipe(n, _) => n,
-            Trigger::PinchIn(n) | Trigger::PinchOut(n) | Trigger::RotateCw(n) | Trigger::RotateCcw(n) => n,
+            Trigger::PinchIn(n) | Trigger::PinchOut(n) => n,
             Trigger::Hold(n) | Trigger::Tap(n) | Trigger::DoubleTap(n) | Trigger::TapHold(n) => n,
         }
     }
@@ -153,7 +149,6 @@ impl Trigger {
             Trigger::SideDrag(..) => "Side drag",
             Trigger::Swipe(..) => "Swipe",
             Trigger::PinchIn(_) | Trigger::PinchOut(_) => "Pinch",
-            Trigger::RotateCw(_) | Trigger::RotateCcw(_) => "Rotate",
             Trigger::Hold(_) | Trigger::Tap(_) | Trigger::DoubleTap(_) | Trigger::TapHold(_) => "Taps",
         }
     }
@@ -178,8 +173,6 @@ impl Trigger {
             Trigger::Swipe(n, d) => format!("{} swipe {}", f(n), d.name()),
             Trigger::PinchIn(n) => format!("{} pinch in", f(n)),
             Trigger::PinchOut(n) => format!("{} pinch out", f(n)),
-            Trigger::RotateCw(n) => format!("{} rotate clockwise", f(n)),
-            Trigger::RotateCcw(n) => format!("{} rotate counter-clockwise", f(n)),
             Trigger::Hold(n) => format!("{} hold", f(n)),
             Trigger::Tap(n) => format!("{} tap", f(n)),
             Trigger::DoubleTap(n) => format!("{} double tap", f(n)),
@@ -221,7 +214,7 @@ impl Trigger {
             for d in [Dir::Left, Dir::Right, Dir::Up, Dir::Down] {
                 v.push(Trigger::Swipe(n, d));
             }
-            v.extend([Trigger::PinchIn(n), Trigger::PinchOut(n), Trigger::RotateCw(n), Trigger::RotateCcw(n)]);
+            v.extend([Trigger::PinchIn(n), Trigger::PinchOut(n)]);
             v.extend([Trigger::Hold(n), Trigger::Tap(n), Trigger::DoubleTap(n), Trigger::TapHold(n)]);
         }
         v
@@ -237,8 +230,6 @@ impl fmt::Display for Trigger {
             Trigger::Swipe(n, d) => write!(f, "swipe.{n}.{}", d.name()),
             Trigger::PinchIn(n) => write!(f, "pinch.{n}.in"),
             Trigger::PinchOut(n) => write!(f, "pinch.{n}.out"),
-            Trigger::RotateCw(n) => write!(f, "rotate.{n}.cw"),
-            Trigger::RotateCcw(n) => write!(f, "rotate.{n}.ccw"),
             Trigger::Hold(n) => write!(f, "hold.{n}"),
             Trigger::Tap(n) => write!(f, "tap.{n}"),
             Trigger::DoubleTap(n) => write!(f, "doubletap.{n}"),

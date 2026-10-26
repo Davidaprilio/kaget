@@ -508,15 +508,6 @@ FormCard.FormCardPage {
             step: 0.05
             unit: "×"
         }
-        FormCard.FormDelegateSeparator {}
-        NumberDelegate {
-            label: i18n("Rotation angle")
-            path: "gestures.rotate_deg"
-            minimum: 5
-            maximum: 180
-            step: 1
-            unit: "°"
-        }
     }
 
     // ----- NumberPad -----

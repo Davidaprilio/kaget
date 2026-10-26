@@ -22,7 +22,6 @@ Kirigami.ScrollablePage {
         {value: "side_drag", text: i18nc("@title gesture group", "Side drag")},
         {value: "swipe", text: i18nc("@title gesture group", "Swipe")},
         {value: "pinch", text: i18nc("@title gesture group", "Pinch")},
-        {value: "rotate", text: i18nc("@title gesture group", "Rotate")},
         {value: "taps", text: i18nc("@title gesture group", "Taps")}
     ]
 

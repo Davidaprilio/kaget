@@ -450,60 +450,6 @@
     "description": "Spread five fingers apart"
   },
   {
-    "trigger": "rotate.3.cw",
-    "group": "rotate",
-    "fingers": 3,
-    "system_owned": false,
-    "available": true,
-    "reason": "",
-    "description": "Rotate three fingers clockwise"
-  },
-  {
-    "trigger": "rotate.3.ccw",
-    "group": "rotate",
-    "fingers": 3,
-    "system_owned": false,
-    "available": true,
-    "reason": "",
-    "description": "Rotate three fingers counter-clockwise"
-  },
-  {
-    "trigger": "rotate.4.cw",
-    "group": "rotate",
-    "fingers": 4,
-    "system_owned": false,
-    "available": true,
-    "reason": "",
-    "description": "Rotate four fingers clockwise"
-  },
-  {
-    "trigger": "rotate.4.ccw",
-    "group": "rotate",
-    "fingers": 4,
-    "system_owned": false,
-    "available": true,
-    "reason": "",
-    "description": "Rotate four fingers counter-clockwise"
-  },
-  {
-    "trigger": "rotate.5.cw",
-    "group": "rotate",
-    "fingers": 5,
-    "system_owned": false,
-    "available": true,
-    "reason": "",
-    "description": "Rotate five fingers clockwise"
-  },
-  {
-    "trigger": "rotate.5.ccw",
-    "group": "rotate",
-    "fingers": 5,
-    "system_owned": false,
-    "available": true,
-    "reason": "",
-    "description": "Rotate five fingers counter-clockwise"
-  },
-  {
     "trigger": "tap.3",
     "group": "taps",
     "fingers": 3,

@@ -1,4 +1,4 @@
-//! Sessions of three or more fingers: side drag, swipe (and swipe sliders), pinch, rotate, hold,
+//! Sessions of three or more fingers: side drag, swipe (and swipe sliders), pinch, hold,
 //! tap, double tap and tap-hold.
 
 use std::collections::BTreeMap;
@@ -72,8 +72,6 @@ struct Motion {
     /// Mean distance to the centroid, start and now.
     spread0: f64,
     spread1: f64,
-    /// Mean rotation around the centroid in degrees (positive = clockwise on the pad).
-    angle: f64,
     max_move: f64,
     k: usize,
 }
@@ -97,21 +95,12 @@ fn motion(pairs: &[(Point, Point)]) -> Motion {
     let k = pairs.len();
     let mut spread0 = 0.0;
     let mut spread1 = 0.0;
-    let mut angle = 0.0;
     let mut max_move: f64 = 0.0;
     for (a, b) in pairs {
         let (ax, ay) = (a.0 - c0.0, a.1 - c0.1);
         let (bx, by) = (b.0 - c1.0, b.1 - c1.1);
         spread0 += ax.hypot(ay);
         spread1 += bx.hypot(by);
-        let mut da = by.atan2(bx) - ay.atan2(ax);
-        while da > std::f64::consts::PI {
-            da -= 2.0 * std::f64::consts::PI;
-        }
-        while da < -std::f64::consts::PI {
-            da += 2.0 * std::f64::consts::PI;
-        }
-        angle += da;
         max_move = max_move.max((b.0 - a.0).hypot(b.1 - a.1));
     }
     let kf = k.max(1) as f64;
@@ -119,7 +108,6 @@ fn motion(pairs: &[(Point, Point)]) -> Motion {
         d: (c1.0 - c0.0, c1.1 - c0.1),
         spread0: spread0 / kf,
         spread1: spread1 / kf,
-        angle: (angle / kf).to_degrees(),
         max_move,
         k,
     }
@@ -381,11 +369,6 @@ impl Engine {
             };
             if let Some(t) = pinch {
                 self.recognised(s, out);
-                return self.take_or_reveal(s, &t.to_string(), out);
-            }
-            if m.angle.abs() >= g.rotate_deg {
-                self.recognised(s, out);
-                let t = if m.angle > 0.0 { Trigger::RotateCw(n) } else { Trigger::RotateCcw(n) };
                 return self.take_or_reveal(s, &t.to_string(), out);
             }
         }
