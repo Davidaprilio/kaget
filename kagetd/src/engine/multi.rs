@@ -23,6 +23,10 @@ pub const JOIN_S: f64 = 0.2;
 pub const SLOPPY_S: f64 = 1.0;
 /// A tap or hold may not move more than this (per finger).
 pub const STILL_MM: f64 = 3.0;
+/// A swipe the desktop gets anyway (unbound, `system:<n>`) is handed over once the centroid moved
+/// this far in a clear direction, so KWin's animation starts close to the fingers; swipes bound
+/// to KAGeT's own actions still wait for `gestures.swipe_mm`.
+pub const HANDOVER_MM: f64 = 5.0;
 /// Synthesized fingers (`system:<n>`) stay this far from the left and right edge, where libinput
 /// would take them for a palm.
 pub const EXTRA_MARGIN_MM: f64 = 15.0;
@@ -144,6 +148,17 @@ fn motion(pairs: &[(Point, Point)]) -> Motion {
         spread1: spread1 / kf,
         max_move,
         k,
+    }
+}
+
+/// Direction of a movement when one axis clearly dominates (at least twice the other).
+fn clear_direction((dx, dy): (f64, f64)) -> Option<Dir> {
+    if dx.abs() >= 2.0 * dy.abs() {
+        Some(if dx > 0.0 { Dir::Right } else { Dir::Left })
+    } else if dy.abs() >= 2.0 * dx.abs() {
+        Some(if dy > 0.0 { Dir::Down } else { Dir::Up })
+    } else {
+        None
     }
 }
 
@@ -279,6 +294,23 @@ impl Engine {
             Self::reveal(s, out);
         }
         State::Done
+    }
+
+    /// Does this swipe go to the desktop anyway (not bound or `system:<n>`)?
+    fn desktop_swipe(&self, trigger: &str) -> bool {
+        match self.bound(trigger) {
+            Some(b) => matches!(Action::parse(&b.action), Ok(Action::SystemAs { .. })),
+            None => !self.is_swallowed(trigger),
+        }
+    }
+
+    /// Is a pinch of `n` fingers one of KAGeT's own gestures (then a swipe must not be decided
+    /// early: the fingers may still turn out to pinch)?
+    fn pinch_is_ours(&self, n: u32) -> bool {
+        [Trigger::PinchIn(n), Trigger::PinchOut(n)].iter().any(|t| {
+            let t = t.to_string();
+            self.is_swallowed(&t) || self.bound(&t).is_some_and(|b| !matches!(Action::parse(&b.action), Ok(Action::SystemAs { .. })))
+        })
     }
 
     /// `system:<f>`: the desktop gets the gesture as one with `f` fingers. The missing ones are
@@ -530,6 +562,19 @@ impl Engine {
             }
         }
         let dist = m.d.0.hypot(m.d.1);
+        if dist >= HANDOVER_MM
+            && dist < g.swipe_mm
+            && s.withhold
+            && !s.revealed
+            && s.edge.is_none()
+            && let Some(dir) = clear_direction(m.d)
+        {
+            let trigger = Trigger::Swipe(n, dir).to_string();
+            if self.desktop_swipe(&trigger) && !self.pinch_is_ours(n) {
+                self.recognised(s, out);
+                return self.take_or_reveal(s, &trigger, tr, out);
+            }
+        }
         if dist >= g.swipe_mm {
             self.recognised(s, out);
             let dir = if m.d.0.abs() >= m.d.1.abs() {

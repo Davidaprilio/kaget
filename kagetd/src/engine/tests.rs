@@ -460,7 +460,45 @@ fn filter_corner_tap_then_swipe_clicks_and_slides() {
     assert_eq!(s.clone_sink().touched(), [1].into(), "the tap was a click, the swipe stays hidden");
 }
 
-// ---- resting and leftover fingers ----------------------------------------------------------------
+// ---- early handover, resting fingers, leftover fingers -------------------------------------------
+
+#[test]
+fn desktop_swipe_is_handed_over_as_soon_as_its_direction_is_clear() {
+    let mut s = filter_sim(&[("swipe.3.up", "system:4"), ("swipe.3.down", "cmd:shot")], true, false);
+    s.touch_all(0.0, THREE);
+    s.drag_all(0.1, THREE, (0, -40), 5); // 6.5 mm up, after the landing window
+    assert_eq!(s.out.actions(), ["system:4"]);
+    assert_eq!(s.clone_sink().down(), [1, 2, 3, EXTRA].into());
+}
+
+#[test]
+fn own_swipe_still_waits_for_swipe_mm() {
+    let mut s = filter_sim(&[("swipe.3.up", "system:4"), ("swipe.3.down", "cmd:shot")], true, false);
+    s.touch_all(0.0, THREE);
+    let t = s.drag_all(0.1, THREE, (0, 40), 5); // 6.5 mm down
+    assert!(s.out.fired.is_empty());
+    assert!(!s.clone_sink().touched().contains(&3));
+    let moved: Vec<(i32, i32, i32)> = THREE.iter().map(|&(sl, x, y)| (sl, x, y + 200)).collect();
+    s.drag_all(t, &moved, (0, 40), 5);
+    assert_eq!(s.out.actions(), ["cmd:shot"]);
+}
+
+#[test]
+fn unclear_direction_waits_for_swipe_mm() {
+    let mut s = filter_sim(&[("swipe.3.up", "system:4"), ("swipe.3.down", "cmd:shot")], true, false);
+    s.touch_all(0.0, THREE);
+    s.drag_all(0.1, THREE, (25, -30), 6); // 7.6 mm, up and to the right alike
+    assert!(s.out.fired.is_empty(), "{:?}", s.out.actions());
+    assert!(!s.clone_sink().touched().contains(&3));
+}
+
+#[test]
+fn own_pinch_keeps_swipes_from_going_early() {
+    let mut s = filter_sim(&[("swipe.3.up", "system:4"), ("pinch.3.in", "cmd:pinch")], true, false);
+    s.touch_all(0.0, THREE);
+    s.drag_all(0.1, THREE, (0, -40), 5);
+    assert!(s.out.fired.is_empty());
+}
 
 /// Thumb resting low on the pad (slot 4) since long before.
 fn thumb_down(s: &mut Sim) {
