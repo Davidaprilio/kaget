@@ -9,8 +9,9 @@ pub enum Action {
     None,
     System,
     /// `system:<n>`: the desktop gets the gesture, as one with `n` fingers (filter mode adds the
-    /// missing ones), e.g. KWin's 4-finger swipes with three fingers.
-    SystemAs(u32),
+    /// missing ones), e.g. KWin's 4-finger swipes with three fingers. `system:<n>:window` also
+    /// takes the active window along when KWin switches the desktop with it.
+    SystemAs { fingers: u32, window: bool },
     /// Key codes sent through the virtual keyboard (`key:` / `shortcut:`).
     Keys(Vec<u16>),
     /// KDE global shortcut (kglobalaccel).
@@ -126,10 +127,17 @@ impl Action {
                     }
                     "app" => Action::App(rest.into()),
                     "cmd" => Action::Command(rest.into()),
-                    "system" => match rest.parse() {
-                        Ok(n @ 3..=5) => Action::SystemAs(n),
-                        _ => return Err(format!("system:{rest}: the finger count must be 3, 4 or 5")),
-                    },
+                    "system" => {
+                        let (n, window) = match rest.split_once(':') {
+                            Some((n, "window")) => (n, true),
+                            Some(_) => return Err(format!("system:{rest}: use system:<n> or system:<n>:window")),
+                            None => (rest, false),
+                        };
+                        match n.parse() {
+                            Ok(fingers @ 3..=5) => Action::SystemAs { fingers, window },
+                            _ => return Err(format!("system:{rest}: the finger count must be 3, 4 or 5")),
+                        }
+                    }
                     _ => return Err(format!("unknown action type '{kind}'")),
                 }
             }
@@ -160,6 +168,7 @@ pub fn catalog(kwin_shortcuts: &[String], plasma_shortcuts: &[String], numberpad
         entry("none", "Do nothing", "General"),
         entry("system", "System default", "General"),
         entry("system:4", "KDE 4-finger gesture (follows the fingers)", "General"),
+        entry("system:4:window", "KDE 4-finger desktop switch, taking the window along", "General"),
         entry("kaget.pause", "Pause / resume KAGeT gestures", "General"),
         entry("kaget.panel", "Show / hide the touchpad control panel", "General"),
     ];
@@ -216,8 +225,10 @@ mod tests {
         );
         assert_eq!(Action::parse("app:org.kde.kcalc.desktop").unwrap(), Action::App("org.kde.kcalc.desktop".into()));
         assert_eq!(Action::parse("system").unwrap(), Action::System);
-        assert_eq!(Action::parse("system:4").unwrap(), Action::SystemAs(4));
+        assert_eq!(Action::parse("system:4").unwrap(), Action::SystemAs { fingers: 4, window: false });
+        assert_eq!(Action::parse("system:4:window").unwrap(), Action::SystemAs { fingers: 4, window: true });
         assert!(Action::parse("system:9").is_err());
+        assert!(Action::parse("system:4:tab").is_err());
         assert!(Action::parse("cmd:").is_err());
         assert!(Action::parse("explode").is_err());
     }

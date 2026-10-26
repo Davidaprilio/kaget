@@ -261,7 +261,7 @@ impl Config {
         for (i, c) in p.controls.iter().enumerate() {
             if let Some(a) = panel_slot_action(c) {
                 match Action::parse(a) {
-                    Ok(Action::None | Action::System | Action::SystemAs(_)) => {
+                    Ok(Action::None | Action::System | Action::SystemAs { .. }) => {
                         return Err(format!("panel.controls: '{c}' does nothing"));
                     }
                     Ok(_) => {}

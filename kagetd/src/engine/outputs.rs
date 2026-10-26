@@ -48,6 +48,9 @@ pub trait Outputs {
         self.replay(tids);
     }
     fn panel(&mut self, _ev: PanelEvent) {}
+    /// `system:<n>:window`: KWin's desktop switch is starting (`true`; keep the active window on
+    /// screen) or its fingers lifted (`false`; leave the window on the desktop it ends up on).
+    fn carry_window(&mut self, _start: bool) {}
 }
 
 /// Records outputs for tests and `--replay`.
@@ -61,6 +64,7 @@ pub struct FakeOutputs {
     /// `replay_as`: the contacts and the synthesized fingers that follow them.
     pub extra: Vec<Handover>,
     pub panel: Vec<PanelEvent>,
+    pub carry: Vec<bool>,
 }
 
 #[cfg(test)]
@@ -99,5 +103,8 @@ impl Outputs for FakeOutputs {
     }
     fn panel(&mut self, ev: PanelEvent) {
         self.panel.push(ev);
+    }
+    fn carry_window(&mut self, start: bool) {
+        self.carry.push(start);
     }
 }

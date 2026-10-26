@@ -17,7 +17,7 @@ use crate::config::Config;
 use crate::geometry::Geometry;
 use crate::npad::NumberPad;
 use crate::tracker::Tracker;
-use crate::triggers::Trigger;
+use crate::triggers::{Dir, Trigger};
 
 use corners::Touch;
 use outputs::{Fired, Outputs, PanelEvent};
@@ -176,11 +176,19 @@ impl Engine {
             }
             self.swallow.remove(&b.trigger);
             let Ok(action) = Action::parse(a) else { continue };
-            // `system:<n>` needs the clone (filter mode) and a gesture the desktop knows
-            let handover = matches!(t, Trigger::Swipe(..) | Trigger::PinchIn(_) | Trigger::PinchOut(_));
+            // `system:<n>` needs the clone (filter mode) and a gesture the desktop knows; taking the
+            // window along only fits KWin's desktop switch (sideways swipes)
+            let handover = match action {
+                Action::SystemAs { window: false, .. } => {
+                    matches!(t, Trigger::Swipe(..) | Trigger::PinchIn(_) | Trigger::PinchOut(_))
+                }
+                Action::SystemAs { window: true, .. } => matches!(t, Trigger::Swipe(_, Dir::Left | Dir::Right)),
+                _ => true,
+            };
             let usable = reachable
                 && (self.npad.is_some() || !matches!(action, Action::NumberPad(_)))
-                && (!matches!(action, Action::SystemAs(_)) || (!self.passive && handover));
+                && (!matches!(action, Action::SystemAs { .. }) || !self.passive)
+                && handover;
             if usable {
                 self.bindings.insert(b.trigger.clone(), Bound { action: a.into(), when_running: b.when_running.clone() });
             } else {
@@ -234,7 +242,7 @@ impl Engine {
             }
         };
         let local = match parsed {
-            Action::None | Action::System | Action::SystemAs(_) => return false,
+            Action::None | Action::System | Action::SystemAs { .. } => return false,
             Action::Pause => {
                 self.paused = !self.paused;
                 eprintln!("gestures {}", if self.paused { "paused" } else { "resumed" });
@@ -342,7 +350,7 @@ impl Engine {
         }
         self.touches.clear();
         self.corner_tap = None;
-        self.multi = multi::Multi::default();
+        self.multi_reset(out);
     }
 
     pub fn set_numlock(&mut self, on: bool, out: &mut dyn Outputs) {

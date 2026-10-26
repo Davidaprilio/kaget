@@ -18,6 +18,12 @@
     "slider": false
   },
   {
+    "action": "system:4:window",
+    "label": "KDE 4-finger desktop switch, taking the window along",
+    "category": "General",
+    "slider": false
+  },
+  {
     "action": "volume.up",
     "label": "Volume up",
     "category": "Media",

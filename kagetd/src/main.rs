@@ -252,6 +252,10 @@ impl Outputs for MainOut<'_> {
             PanelEvent::Commit => self.commit_scale = true,
         }
     }
+
+    fn carry_window(&mut self, start: bool) {
+        let _ = self.exec.send(Request::CarryWindow(start));
+    }
 }
 
 /// A connected touchpad.

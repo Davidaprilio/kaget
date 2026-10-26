@@ -49,6 +49,8 @@ struct Session {
     revealed: bool,
     /// The finger count was checked against the bindings once the landing window closed.
     checked: bool,
+    /// `system:<n>:window`: the active window rides along with KWin's desktop switch.
+    carry: bool,
 }
 
 /// A finished tap, kept so it can still be handed to the desktop.
@@ -227,9 +229,9 @@ impl Engine {
     /// A recognised trigger: fire it, swallow it, or hand the fingers to the desktop.
     fn take_or_reveal(&mut self, s: &mut Session, trigger: &str, tr: &Tracker, out: &mut dyn Outputs) -> State {
         if let Some(b) = self.bound(trigger).cloned()
-            && let Ok(Action::SystemAs(f)) = Action::parse(&b.action)
+            && let Ok(Action::SystemAs { fingers, window }) = Action::parse(&b.action)
         {
-            return self.hand_over(s, trigger, &b.action, f, tr, out);
+            return self.hand_over(s, trigger, &b.action, (fingers, window), tr, out);
         }
         if !self.fire_trigger(trigger, out) && !self.is_swallowed(trigger) {
             Self::reveal(s, out);
@@ -239,10 +241,24 @@ impl Engine {
 
     /// `system:<f>`: the desktop gets the gesture as one with `f` fingers. The missing ones are
     /// synthesized beside the hand and follow it, so KWin runs its own gesture with its
-    /// finger-following animation (e.g. the 4-finger overview with three fingers).
-    fn hand_over(&mut self, s: &mut Session, trigger: &str, action: &str, f: u32, tr: &Tracker, out: &mut dyn Outputs) -> State {
+    /// finger-following animation (e.g. the 4-finger overview with three fingers). With `window`
+    /// the active window is taken along to the desktop KWin switches to.
+    fn hand_over(
+        &mut self,
+        s: &mut Session,
+        trigger: &str,
+        action: &str,
+        (f, window): (u32, bool),
+        tr: &Tracker,
+        out: &mut dyn Outputs,
+    ) -> State {
         if s.withhold && !s.revealed {
             s.revealed = true;
+            if window {
+                // before the desktop starts to move
+                s.carry = true;
+                out.carry_window(true);
+            }
             // only the fingers still down: one that bounced would count twice
             let down: Vec<&Contact> = s.start.keys().filter_map(|&slot| tr.get(slot)).filter(|c| !c.lifted).collect();
             let pts: Vec<Point> = down.iter().map(|c| self.geo.mm(c.x, c.y)).collect();
@@ -303,6 +319,7 @@ impl Engine {
                 withhold,
                 revealed: false,
                 checked: false,
+                carry: false,
             });
         } else if let Some(s) = self.multi.session.as_mut() {
             let fresh: Vec<_> = live.iter().filter(|c| c.fresh).collect();
@@ -419,8 +436,8 @@ impl Engine {
             };
             let trigger = Trigger::Swipe(n, dir).to_string();
             let Some(b) = self.bound(&trigger).cloned() else { return self.take_or_reveal(s, &trigger, tr, out) };
-            if let Ok(Action::SystemAs(f)) = Action::parse(&b.action) {
-                return self.hand_over(s, &trigger, &b.action, f, tr, out);
+            if let Ok(Action::SystemAs { fingers, window }) = Action::parse(&b.action) {
+                return self.hand_over(s, &trigger, &b.action, (fingers, window), tr, out);
             }
             if let Some(inverse) = actions::inverse(&b.action) {
                 let axis = if matches!(dir, Dir::Left | Dir::Right) { Axis::X } else { Axis::Y };
@@ -488,6 +505,9 @@ impl Engine {
     /// All fingers lifted.
     fn multi_end(&mut self, now: f64, out: &mut dyn Outputs) {
         let Some(mut s) = self.multi.session.take() else { return };
+        if s.carry {
+            out.carry_window(false);
+        }
         let n = s.n;
         let is_tap = matches!(s.state, State::Pending)
             && now - s.t_first <= self.cfg.taps.max_tap_ms as f64 / 1000.0
@@ -523,6 +543,14 @@ impl Engine {
         } else {
             self.flush_tap(&tap, out);
         }
+    }
+
+    /// Forget the session (device lost, events dropped); a window being carried is let go.
+    pub(super) fn multi_reset(&mut self, out: &mut dyn Outputs) {
+        if self.multi.session.as_ref().is_some_and(|s| s.carry) {
+            out.carry_window(false);
+        }
+        self.multi = Multi::default();
     }
 
     pub(super) fn multi_timers(&mut self, tr: &Tracker, now: f64, out: &mut dyn Outputs) {

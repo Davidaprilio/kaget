@@ -22,6 +22,9 @@ const MIN_INTERVAL: Duration = Duration::from_millis(33);
 const LED_DELAY: Duration = Duration::from_millis(50);
 /// Time a KWin helper script stays loaded.
 const SCRIPT_LIFETIME: Duration = Duration::from_secs(3);
+/// `system:<n>:window`: after the fingers lift, KWin finishes the desktop slide; the carried window
+/// is put on the desktop only then (earlier it would jump and slide in with it).
+const CARRY_SETTLE: Duration = Duration::from_millis(600);
 
 #[derive(Debug)]
 pub enum Request {
@@ -38,6 +41,11 @@ pub enum Request {
     AdjustControl { kind: String, delta: f64 },
     /// Show or hide the `kaget-panel` window (started when needed).
     PanelWindow(bool),
+    /// `system:<n>:window`: KWin's desktop switch starts (keep the active window on all desktops)
+    /// or its fingers lifted (put that window on the desktop KWin ends up on).
+    CarryWindow(bool),
+    /// The helper script pinned this window (KWin `internalId`).
+    WindowCarried(String),
     Quit,
 }
 
@@ -74,6 +82,8 @@ pub fn spawn(conn: Option<Connection>, steps: Steps, signals: Sender<SignalMsg>,
                 last: HashMap::new(),
                 scripts: Vec::new(),
                 next_script: 0,
+                carried: None,
+                drop_at: None,
             }
             .run(rx)
         })
@@ -94,6 +104,9 @@ struct Executor {
     /// Loaded KWin helper scripts and when to unload them.
     scripts: Vec<(String, Instant)>,
     next_script: u32,
+    /// `system:<n>:window`: the window pinned to all desktops, and when to let it go.
+    carried: Option<String>,
+    drop_at: Option<Instant>,
 }
 
 /// KDE's kglobalaccel object path for a component (`org.kde.kcalc.desktop` -> `org_kde_kcalc_desktop`).
@@ -155,9 +168,13 @@ fn coalesce(reqs: Vec<Request>) -> Vec<(Request, u32)> {
 impl Executor {
     fn run(mut self, rx: Receiver<Request>) {
         loop {
-            let first = match rx.recv_timeout(Duration::from_millis(500)) {
+            let wait = self.drop_at.map_or(Duration::from_millis(500), |t| {
+                t.saturating_duration_since(Instant::now()).min(Duration::from_millis(500))
+            });
+            let first = match rx.recv_timeout(wait) {
                 Ok(r) => r,
                 Err(RecvTimeoutError::Timeout) => {
+                    self.drop_window(false);
                     self.unload_scripts(false);
                     continue;
                 }
@@ -215,6 +232,17 @@ impl Executor {
                             eprintln!("KWin pointer switch failed: {e}");
                         }
                     }
+                    Request::CarryWindow(true) => {
+                        // swiping on before the last window was let go: it keeps riding along
+                        if self.drop_at.take().is_none() || self.carried.is_none() {
+                            self.carried = None;
+                            if let Err(e) = self.load_script("carry", CARRY_SCRIPT) {
+                                eprintln!("carry window: {e}");
+                            }
+                        }
+                    }
+                    Request::CarryWindow(false) => self.drop_at = Some(Instant::now() + CARRY_SETTLE),
+                    Request::WindowCarried(id) => self.carried = Some(id),
                     Request::Run { action, when_running } => {
                         self.rate_limit(&action);
                         if let Err(e) = self.execute(&action, when_running.as_deref(), n) {
@@ -227,12 +255,26 @@ impl Executor {
             if publish {
                 self.publish_controls();
             }
+            self.drop_window(quit);
             self.unload_scripts(false);
             if quit {
                 break;
             }
         }
         self.unload_scripts(true);
+    }
+
+    /// Put the carried window on the current desktop once the slide settled (`now`: at once).
+    fn drop_window(&mut self, now: bool) {
+        if !now && self.drop_at.is_none_or(|t| t > Instant::now()) {
+            return;
+        }
+        self.drop_at = None;
+        if let Some(id) = self.carried.take()
+            && let Err(e) = self.load_script("drop", &drop_script(&id))
+        {
+            eprintln!("carry window: {e}");
+        }
     }
 
     fn rate_limit(&mut self, action: &str) {
@@ -267,7 +309,7 @@ impl Executor {
 
     fn execute(&mut self, action: &str, when_running: Option<&str>, n: u32) -> Result<(), String> {
         match Action::parse(action)? {
-            Action::None | Action::System | Action::SystemAs(_) | Action::Pause | Action::NumberPad(_) => Ok(()),
+            Action::None | Action::System | Action::SystemAs { .. } | Action::Pause | Action::NumberPad(_) => Ok(()),
             Action::Panel => Ok(()), // panel mode lives in the engine
             Action::Keys(_) => Err("key actions are sent by the main thread".into()),
             Action::Global { component, name } => {
@@ -447,15 +489,20 @@ impl Executor {
     /// `app:` with when_running close/focus/minimize/toggle: a short-lived KWin script looks up the
     /// app's windows and calls back `LaunchApp` when there are none.
     fn app_toggle(&mut self, id: &str, mode: &str) -> Result<(), String> {
+        self.load_script("app", &kwin_script(id, mode))
+    }
+
+    /// Load and run a short-lived KWin helper script (unloaded after `SCRIPT_LIFETIME`).
+    fn load_script(&mut self, kind: &str, source: &str) -> Result<(), String> {
         let dir = std::env::var_os("XDG_RUNTIME_DIR")
             .map(std::path::PathBuf::from)
             .unwrap_or_else(std::env::temp_dir)
             .join("kaget");
         std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
         self.next_script += 1;
-        let name = format!("kaget-app-{}-{}", std::process::id(), self.next_script);
+        let name = format!("kaget-{kind}-{}-{}", std::process::id(), self.next_script);
         let path = dir.join(format!("{name}.js"));
-        std::fs::write(&path, kwin_script(id, mode)).map_err(|e| e.to_string())?;
+        std::fs::write(&path, source).map_err(|e| e.to_string())?;
         let path_s = path.to_string_lossy().into_owned();
         let reply = self.call("org.kde.KWin", "/Scripting", "org.kde.kwin.Scripting", "loadScript", &(path_s.as_str(), name.as_str()))?;
         let script_id: i32 = reply.body().deserialize().map_err(|e| e.to_string())?;
@@ -526,6 +573,28 @@ pub fn set_pointer(conn: &Connection, device: &str, enabled: bool) -> Result<(),
 
 fn js_string(s: &str) -> String {
     serde_json::to_string(s).unwrap_or_else(|_| "\"\"".into())
+}
+
+/// KWin 6 script for `system:<n>:window`: the active window stays on screen while the desktop
+/// slides (windows on all desktops do not move) and is reported back for `drop_script`.
+const CARRY_SCRIPT: &str = r#"const w = workspace.activeWindow;
+if (w && w.normalWindow && !w.onAllDesktops) {
+    w.onAllDesktops = true;
+    callDBus("io.github.kaget", "/io/github/kaget/Daemon", "io.github.kaget.Daemon1", "WindowCarried", w.internalId.toString());
+}
+"#;
+
+/// KWin 6 script: the carried window lives on the current desktop only again.
+pub fn drop_script(id: &str) -> String {
+    format!(
+        r#"const id = {id};
+const w = workspace.windowList().find(w => w.internalId.toString() === id);
+if (w) {{
+    w.desktops = [workspace.currentDesktop];
+}}
+"#,
+        id = js_string(id),
+    )
 }
 
 /// KWin 6 script for `app:` toggling. `desktopFileName` has no `.desktop` suffix.
@@ -621,6 +690,14 @@ mod tests {
         assert_eq!(parse_volume(""), None);
         assert_eq!(pct(1, 3), 33.3);
         assert_eq!(pct(5000, 10000), 50.0);
+    }
+
+    #[test]
+    fn carry_scripts() {
+        assert!(CARRY_SCRIPT.contains(r#""WindowCarried", w.internalId.toString()"#));
+        let s = drop_script("{0a1b-2c}");
+        assert!(s.contains(r#"const id = "{0a1b-2c}";"#));
+        assert!(s.contains("w.desktops = [workspace.currentDesktop];"));
     }
 
     #[test]

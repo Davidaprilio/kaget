@@ -215,6 +215,11 @@ impl Daemon {
         let _ = self.executor.send(Request::Run { action: format!("app:{desktop_id}"), when_running: None });
     }
 
+    /// Called by the KWin helper script that pinned the active window for `system:<n>:window`.
+    fn window_carried(&self, internal_id: String) {
+        let _ = self.executor.send(Request::WindowCarried(internal_id));
+    }
+
     #[zbus(signal)]
     async fn touches(emitter: &SignalEmitter<'_>, json: &str) -> zbus::Result<()>;
 

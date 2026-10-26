@@ -1085,6 +1085,47 @@ fn other_directions_stay_three_finger_gestures() {
 }
 
 #[test]
+fn four_finger_desktop_switch_takes_the_window_along() {
+    let mut s = filter_sim(&[("swipe.4.left", "system:4:window")], true, false);
+    s.touch_all(0.0, FOUR);
+    let t = s.drag_all(0.05, FOUR, (-40, 0), 12);
+    assert_eq!(s.out.actions(), ["system:4:window"]);
+    assert_eq!(s.out.carry, [true], "pinned as KWin's switch starts");
+    assert_eq!(s.clone_sink().down(), [1, 2, 3, 4].into(), "four real fingers: nothing synthesized");
+    let moved: Vec<(i32, i32, i32)> = FOUR.iter().map(|&(sl, x, y)| (sl, x - 12 * 40, y)).collect();
+    let t = s.drag_all(t, &moved, (-40, 0), 10);
+    s.lift_all(t + 0.01, FOUR);
+    assert_eq!(s.out.carry, [true, false], "let go once the fingers lifted");
+    assert_eq!(s.out.fired.len(), 1);
+}
+
+#[test]
+fn three_finger_desktop_switch_takes_the_window_along() {
+    let mut s = filter_sim(&[("swipe.3.right", "system:4:window")], true, false);
+    s.touch_all(0.0, THREE);
+    s.drag_all(0.03, THREE, (40, 0), 12);
+    assert_eq!(s.out.carry, [true]);
+    assert_eq!(s.clone_sink().down(), [1, 2, 3, EXTRA].into());
+}
+
+#[test]
+fn window_carry_is_only_for_sideways_swipes() {
+    let mut s = filter_sim(&[("swipe.3.up", "system:4:window")], true, false);
+    s.touch_all(0.0, THREE);
+    s.drag_all(0.03, THREE, (0, -40), 12);
+    assert!(s.out.fired.is_empty() && s.out.carry.is_empty());
+}
+
+#[test]
+fn reset_lets_a_carried_window_go() {
+    let mut s = filter_sim(&[("swipe.3.left", "system:4:window")], true, false);
+    s.touch_all(0.0, THREE);
+    s.drag_all(0.03, THREE, (-40, 0), 12);
+    s.e.reset(&mut s.out);
+    assert_eq!(s.out.carry, [true, false]);
+}
+
+#[test]
 fn system_as_needs_filter_mode() {
     let mut s = sim(&[("swipe.5.up", "system:4")]);
     s.touch_all(0.0, FIVE);
