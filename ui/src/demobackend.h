@@ -28,6 +28,8 @@ public:
 Q_SIGNALS:
     void touches(const QString &json);
     void gesture(const QString &trigger, const QString &action);
+    /// One report per scripted touch, like the daemon's `Diagnosis` signal.
+    void diagnosis(const QString &json);
     void stateChanged();
 
 private:

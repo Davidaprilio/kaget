@@ -153,6 +153,9 @@ Q_SIGNALS:
     void lastGestureChanged();
 
     void gestureFired(const QString &trigger, const QString &action);
+    /// What became of a touch (daemon `Diagnosis`), with `triggerTitle`, `cornerTitle`,
+    /// `actionLabel` and `actionIcon` added.
+    void diagnosis(const QVariantMap &d);
     void touchFrame(const QVariantMap &frame);
     void applied(bool ok, const QString &error);
     void actionTested(const QString &action, bool ok);
@@ -164,6 +167,7 @@ private Q_SLOTS:
     void onStateChangedSignal();
     void onTouchesSignal(const QString &json);
     void onGestureSignal(const QString &trigger, const QString &action);
+    void onDiagnosisSignal(const QString &json);
 
 private:
     using ReplyFn = std::function<void(const QVariant &)>;

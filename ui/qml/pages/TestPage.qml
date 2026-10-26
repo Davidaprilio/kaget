@@ -15,7 +15,7 @@ Kirigami.Page {
     readonly property bool wide: width >= Kirigami.Units.gridUnit * 44
     property bool showZones: false
     property var trails: ({})        // slot -> [{x, y}] in mm
-    property var history: []         // [{title, action, icon, time}]
+    property var history: []         // daemon diagnoses, newest first
 
     function roleInfo(role: string): var {
         switch (role) {
@@ -36,6 +36,68 @@ Kirigami.Page {
             return i18n("No fingers on the touchpad");
         const roles = [...new Set(list.map(c => roleInfo(c.role).label))];
         return i18np("%1 finger · %2", "%1 fingers · %2", list.length, roles.join(", "));
+    }
+
+    // ---- what became of each touch (the daemon's Diagnosis signal) --------------------------------
+
+    function entryTitle(d: var): string {
+        if (d.triggerTitle)
+            return d.triggerTitle;
+        if (d.kind === "corner")
+            return d.cornerTitle || i18n("Corner");
+        return i18nc("@label gesture with %1 fingers", "%1-finger gesture", d.fingers);
+    }
+
+    function reasonText(d: var): string {
+        const mm = v => Number(v).toFixed(1);
+        const ms = v => Math.round(v);
+        switch (d.reason) {
+        case "handover": return i18n("Handed to KDE: %1", d.actionLabel || d.action);
+        case "unbound": return i18n("Nothing assigned in KAGeT: left to KDE");
+        case "count": return i18np("Nothing assigned for %1 finger: left to KDE", "Nothing assigned for %1 fingers: left to KDE", d.fingers);
+        case "late_finger": return i18n("A finger landed %1 ms after the first (at most %2 ms): left to KDE", ms(d.late_ms), ms(d.need_ms));
+        case "not_together": return i18n("The fingers landed %1 ms apart (at most %2 ms): not a gesture", ms(d.span_ms), ms(d.need_ms));
+        case "busy": return i18n("A finger was still moving a slider: not a gesture");
+        case "short": return i18n("Moved %1 mm, a swipe needs %2 mm", mm(d.travel_mm), mm(d.need_mm));
+        case "slow_tap": return i18n("Held still for %1 ms: a tap ends within %2 ms", ms(d.duration_ms), ms(d.need_ms));
+        case "short_hold": return i18n("Held still for %1 ms, a hold needs %2 ms", ms(d.duration_ms), ms(d.need_ms));
+        case "tap": return i18n("A tap: KDE clicks");
+        case "early": return i18n("Lifted after %1 ms, a hold needs %2 ms", ms(d.duration_ms), ms(d.need_ms));
+        case "off_pad": return i18n("Swiped towards the edge of the touchpad: no corner swipe there");
+        case "drifted": return i18n("Moved %1 mm while holding: too much for a hold, too little for a swipe (%2 mm)", mm(d.travel_mm), mm(d.need_mm));
+        }
+        return d.result === "kde" ? i18n("Left to KDE") : i18n("Not recognised");
+    }
+
+    function resultText(d: var): string {
+        switch (d.result) {
+        case "fired": return i18nc("@info action that ran", "→ %1", d.actionLabel || d.action);
+        case "slider": return i18ncp("@info slider action and how many steps it ran", "→ %2 · %1 step", "→ %2 · %1 steps", d.steps, d.actionLabel || d.action);
+        case "swallowed": return i18n("Swallowed (“Do nothing”)");
+        }
+        return reasonText(d);
+    }
+
+    function detailText(d: var): string {
+        const parts = [Qt.formatTime(d.time, "hh:mm:ss")];
+        if (d.kind === "multi" && d.span_ms > 0)
+            parts.push(i18nc("@info fingers touched down within", "landed within %1 ms", Math.round(d.span_ms)));
+        if (d.travel_mm > 0)
+            parts.push(i18nc("@info distance", "moved %1 mm", Number(d.travel_mm).toFixed(1)));
+        if (d.duration_ms > 0)
+            parts.push(i18nc("@info touch duration", "%1 ms", Math.round(d.duration_ms)));
+        return parts.join(" · ");
+    }
+
+    // fired / left to KDE on purpose / a near miss worth knowing about
+    function statusOf(d: var): var {
+        if (d.result === "fired" || d.result === "slider")
+            return { icon: "dialog-ok-apply", color: Kirigami.Theme.positiveTextColor };
+        if (d.result === "swallowed")
+            return { icon: "dialog-cancel", color: Kirigami.Theme.disabledTextColor };
+        if (["handover", "unbound", "count", "tap"].includes(d.reason))
+            return { icon: "go-next", color: Kirigami.Theme.textColor };
+        return { icon: "dialog-warning", color: Kirigami.Theme.neutralTextColor };
     }
 
     function updateTrails() {
@@ -62,13 +124,8 @@ Kirigami.Page {
     Connections {
         target: DaemonClient
         function onContactsChanged() { page.updateTrails(); }
-        function onGestureFired(trigger: string, action: string) {
-            const g = DaemonClient.lastGesture;
-            const h = [{ title: g.triggerTitle || trigger, action: g.actionLabel || action,
-                         icon: g.actionIcon || "", time: new Date() }].concat(page.history);
-            page.history = h.slice(0, 15);
-            flash.restart();
-        }
+        function onGestureFired(trigger: string, action: string) { flash.restart(); }
+        function onDiagnosis(d: var) { page.history = [d].concat(page.history).slice(0, 20); }
     }
 
     actions: [
@@ -312,25 +369,47 @@ Kirigami.Page {
             }
             Rectangle {
                 Layout.fillWidth: true
-                implicitHeight: lastCol.implicitHeight + Kirigami.Units.largeSpacing * 2
+                implicitHeight: lastRow.implicitHeight + Kirigami.Units.largeSpacing * 2
                 radius: Kirigami.Units.smallSpacing
                 color: flash.running ? Qt.alpha(Kirigami.Theme.positiveTextColor, 0.2) : Kirigami.Theme.alternateBackgroundColor
                 Behavior on color { ColorAnimation { duration: Kirigami.Units.longDuration } }
-                ColumnLayout {
-                    id: lastCol
+                RowLayout {
+                    id: lastRow
+                    readonly property var entry: page.history.length > 0 ? page.history[0] : null
                     anchors.fill: parent
                     anchors.margins: Kirigami.Units.largeSpacing
-                    QQC2.Label {
-                        Layout.fillWidth: true
-                        text: page.history.length > 0 ? page.history[0].title : i18n("No gesture recognised yet")
-                        wrapMode: Text.Wrap
-                        font.bold: page.history.length > 0
+                    spacing: Kirigami.Units.largeSpacing
+                    Kirigami.Icon {
+                        Layout.alignment: Qt.AlignTop
+                        implicitWidth: Kirigami.Units.iconSizes.medium
+                        implicitHeight: implicitWidth
+                        visible: lastRow.entry !== null
+                        source: lastRow.entry ? page.statusOf(lastRow.entry).icon : ""
+                        color: lastRow.entry ? page.statusOf(lastRow.entry).color : "transparent"
                     }
-                    QQC2.Label {
+                    ColumnLayout {
                         Layout.fillWidth: true
-                        visible: page.history.length > 0
-                        text: page.history.length > 0 ? i18nc("@info action that ran", "→ %1", page.history[0].action) : ""
-                        wrapMode: Text.Wrap
+                        spacing: 0
+                        QQC2.Label {
+                            Layout.fillWidth: true
+                            text: lastRow.entry ? page.entryTitle(lastRow.entry) : i18n("No gesture recognised yet")
+                            wrapMode: Text.Wrap
+                            font.bold: lastRow.entry !== null
+                        }
+                        QQC2.Label {
+                            Layout.fillWidth: true
+                            visible: lastRow.entry !== null
+                            text: lastRow.entry ? page.resultText(lastRow.entry) : ""
+                            wrapMode: Text.Wrap
+                        }
+                        QQC2.Label {
+                            Layout.fillWidth: true
+                            visible: lastRow.entry !== null
+                            text: lastRow.entry ? page.detailText(lastRow.entry) : ""
+                            wrapMode: Text.Wrap
+                            font: Kirigami.Theme.smallFont
+                            opacity: 0.7
+                        }
                     }
                 }
             }
@@ -350,20 +429,36 @@ Kirigami.Page {
                     delegate: QQC2.ItemDelegate {
                         required property var modelData
                         width: ListView.view.width
-                        contentItem: ColumnLayout {
-                            spacing: 0
-                            QQC2.Label {
-                                Layout.fillWidth: true
-                                text: modelData.title
-                                elide: Text.ElideRight
+                        contentItem: RowLayout {
+                            spacing: Kirigami.Units.smallSpacing
+                            Kirigami.Icon {
+                                Layout.alignment: Qt.AlignTop
+                                implicitWidth: Kirigami.Units.iconSizes.small
+                                implicitHeight: implicitWidth
+                                source: page.statusOf(modelData).icon
+                                color: page.statusOf(modelData).color
                             }
-                            QQC2.Label {
+                            ColumnLayout {
                                 Layout.fillWidth: true
-                                text: i18nc("@info time, action", "%1 · %2",
-                                            Qt.formatTime(modelData.time, "hh:mm:ss"), modelData.action)
-                                font: Kirigami.Theme.smallFont
-                                opacity: 0.7
-                                elide: Text.ElideRight
+                                spacing: 0
+                                QQC2.Label {
+                                    Layout.fillWidth: true
+                                    text: page.entryTitle(modelData)
+                                    elide: Text.ElideRight
+                                }
+                                QQC2.Label {
+                                    Layout.fillWidth: true
+                                    text: page.resultText(modelData)
+                                    wrapMode: Text.Wrap
+                                    font: Kirigami.Theme.smallFont
+                                }
+                                QQC2.Label {
+                                    Layout.fillWidth: true
+                                    text: page.detailText(modelData)
+                                    font: Kirigami.Theme.smallFont
+                                    opacity: 0.7
+                                    wrapMode: Text.Wrap
+                                }
                             }
                         }
                     }

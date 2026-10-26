@@ -268,6 +268,7 @@ DaemonClient::DaemonClient(bool demo, QObject *parent)
         m_demoBackend = new DemoBackend(this);
         connect(m_demoBackend, &DemoBackend::touches, this, &DaemonClient::onTouchesSignal);
         connect(m_demoBackend, &DemoBackend::gesture, this, &DaemonClient::onGestureSignal);
+        connect(m_demoBackend, &DemoBackend::diagnosis, this, &DaemonClient::onDiagnosisSignal);
         connect(m_demoBackend, &DemoBackend::stateChanged, this, &DaemonClient::onStateChangedSignal);
         m_probing = false;
         m_connected = true;
@@ -286,6 +287,7 @@ DaemonClient::DaemonClient(bool demo, QObject *parent)
     bus.connect(kService, kPath, kInterface, u"StateChanged"_s, this, SLOT(onStateChangedSignal()));
     bus.connect(kService, kPath, kInterface, u"Touches"_s, this, SLOT(onTouchesSignal(QString)));
     bus.connect(kService, kPath, kInterface, u"Gesture"_s, this, SLOT(onGestureSignal(QString, QString)));
+    bus.connect(kService, kPath, kInterface, u"Diagnosis"_s, this, SLOT(onDiagnosisSignal(QString)));
 
     m_watcher = new QDBusServiceWatcher(kService, bus, QDBusServiceWatcher::WatchForOwnerChange, this);
     connect(m_watcher, &QDBusServiceWatcher::serviceOwnerChanged, this, [this](const QString &, const QString &, const QString &newOwner) {
@@ -879,6 +881,27 @@ void DaemonClient::onGestureSignal(const QString &trigger, const QString &action
     };
     Q_EMIT lastGestureChanged();
     Q_EMIT gestureFired(trigger, action);
+}
+
+void DaemonClient::onDiagnosisSignal(const QString &json)
+{
+    QVariantMap d = parseJson(json).toMap();
+    if (d.isEmpty())
+        return;
+    const QString trigger = d.value(u"trigger"_s).toString();
+    const QString action = d.value(u"action"_s).toString();
+    if (!trigger.isEmpty())
+        d.insert(u"triggerTitle"_s, triggerInfo(trigger).value(u"longTitle"_s));
+    const QString corner = d.value(u"corner"_s).toString();
+    if (!corner.isEmpty())
+        d.insert(u"cornerTitle"_s, cornerName(corner));
+    if (!action.isEmpty()) {
+        const QVariantMap a = actionInfo(action);
+        d.insert(u"actionLabel"_s, a.value(u"label"_s));
+        d.insert(u"actionIcon"_s, a.value(u"icon"_s));
+    }
+    d.insert(u"time"_s, QDateTime::currentDateTime());
+    Q_EMIT diagnosis(d);
 }
 
 // ---------------------------------------------------------------------------

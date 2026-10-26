@@ -3,7 +3,7 @@
 
 use std::collections::BTreeMap;
 
-use super::outputs::{Fired, Outputs};
+use super::outputs::{Diagnosis, Fired, Outputs};
 use super::{Axis, Engine, SLIDER_HYSTERESIS, Slider};
 use crate::actions::{self, Action};
 use crate::tracker::{Contact, Tracker};
@@ -51,6 +51,20 @@ struct Session {
     checked: bool,
     /// `system:<n>:window`: the active window rides along with KWin's desktop switch.
     carry: bool,
+    /// Farthest the centroid got from the start (mm).
+    travel: f64,
+    /// What became of it so far, reported when the fingers lift.
+    diag: Diagnosis,
+}
+
+impl Session {
+    /// Note what the gesture was recognised as (`Engine::outcome`).
+    fn note(&mut self, trigger: &str, (result, action, reason): (&'static str, String, &'static str)) {
+        self.diag.trigger = trigger.into();
+        self.diag.result = result;
+        self.diag.action = action;
+        self.diag.reason = reason;
+    }
 }
 
 /// A finished tap, kept so it can still be handed to the desktop.
@@ -218,6 +232,8 @@ impl Engine {
     /// (or `system`) withheld taps go to the desktop (e.g. libinput's 3-finger middle click).
     fn flush_tap(&mut self, tap: &Tap, out: &mut dyn Outputs) {
         let t = Trigger::Tap(tap.n).to_string();
+        let (result, action, reason) = self.outcome(&t);
+        out.diagnosis(&Diagnosis { kind: "multi", fingers: tap.n, trigger: t.clone(), result, action, reason, ..Default::default() });
         if self.fire_trigger(&t, out) || self.is_swallowed(&t) {
             return;
         }
@@ -233,6 +249,7 @@ impl Engine {
         {
             return self.hand_over(s, trigger, &b.action, (fingers, window), tr, out);
         }
+        s.note(trigger, self.outcome(trigger));
         if !self.fire_trigger(trigger, out) && !self.is_swallowed(trigger) {
             Self::reveal(s, out);
         }
@@ -252,6 +269,7 @@ impl Engine {
         tr: &Tracker,
         out: &mut dyn Outputs,
     ) -> State {
+        s.note(trigger, ("kde", action.into(), "handover"));
         if s.withhold && !s.revealed {
             s.revealed = true;
             if window {
@@ -306,6 +324,12 @@ impl Engine {
             }
             let n = live.len() as u32;
             let withhold = !self.passive && landed_together && self.multi_could_match(n, edge, false);
+            let mut diag = Diagnosis { kind: "multi", result: "none", span_ms: span * 1000.0, ..Default::default() };
+            if !landed_together {
+                diag.result = "kde";
+                diag.reason = if span <= JOIN_S { "busy" } else { "not_together" };
+                diag.need_ms = JOIN_S * 1000.0;
+            }
             self.multi.session = Some(Session {
                 n,
                 t_first,
@@ -320,6 +344,8 @@ impl Engine {
                 revealed: false,
                 checked: false,
                 carry: false,
+                travel: 0.0,
+                diag,
             });
         } else if let Some(s) = self.multi.session.as_mut() {
             let fresh: Vec<_> = live.iter().filter(|c| c.fresh).collect();
@@ -342,6 +368,12 @@ impl Engine {
                         // finger count changed mid-gesture: not ours, or (recognised already) its end
                         if pending {
                             Self::reveal(s, out);
+                            if s.diag.reason != "count" {
+                                s.diag.result = "kde";
+                                s.diag.reason = "late_finger";
+                                s.diag.late_ms = fresh.iter().map(|c| c.t0 - s.t_first).fold(0.0, f64::max) * 1000.0;
+                                s.diag.need_ms = JOIN_S * 1000.0;
+                            }
                         }
                         s.state = State::Done;
                     }
@@ -384,6 +416,8 @@ impl Engine {
         let Some(m) = self.session_motion(tr) else { return };
         let Some(mut s) = self.multi.session.take() else { return };
         s.max_move = s.max_move.max(m.max_move);
+        s.travel = s.travel.max(m.d.0.hypot(m.d.1));
+        let steps = self.fired_steps;
         s.state = match s.state {
             State::Slider(mut sl) => {
                 let pos = if sl.axis == Axis::X { m.d.0 } else { m.d.1 };
@@ -396,12 +430,15 @@ impl Engine {
                     s.checked = true;
                     if s.withhold && !self.multi_could_match(s.n, s.edge, true) {
                         Self::reveal(&mut s, out);
+                        s.diag.result = "kde";
+                        s.diag.reason = "count";
                     }
                 }
                 self.recognise(&mut s, &m, tr, now, out)
             }
             st => st,
         };
+        s.diag.steps += self.fired_steps.wrapping_sub(steps);
         self.multi.session = Some(s);
     }
 
@@ -440,6 +477,7 @@ impl Engine {
                 return self.hand_over(s, &trigger, &b.action, (fingers, window), tr, out);
             }
             if let Some(inverse) = actions::inverse(&b.action) {
+                s.note(&trigger, ("slider", b.action.clone(), ""));
                 let axis = if matches!(dir, Dir::Left | Dir::Right) { Axis::X } else { Axis::Y };
                 let sign = if matches!(dir, Dir::Left | Dir::Up) { -1.0 } else { 1.0 };
                 let step = self.cfg.slider.step_mm;
@@ -460,6 +498,7 @@ impl Engine {
                 self.flush_steps(out);
                 return State::Slider(sl);
             }
+            s.note(&trigger, ("fired", b.action.clone(), ""));
             self.fire(&trigger, &b.action, b.when_running, out);
             return State::Done;
         }
@@ -487,15 +526,16 @@ impl Engine {
         }
         let n = s.n;
         let taphold = Trigger::TapHold(n).to_string();
-        if s.after_tap.as_ref().is_some_and(|t| t.n == n)
-            && (self.fire_trigger(&taphold, out) || self.is_swallowed(&taphold))
-        {
+        if s.after_tap.as_ref().is_some_and(|t| t.n == n) && (self.is_bound(&taphold) || self.is_swallowed(&taphold)) {
+            s.note(&taphold, self.outcome(&taphold));
+            self.fire_trigger(&taphold, out);
             s.after_tap = None;
             return State::Done;
         }
         let hold = Trigger::Hold(n).to_string();
         if self.is_bound(&hold) || self.is_swallowed(&hold) {
             self.recognised(s, out);
+            s.note(&hold, self.outcome(&hold));
             self.fire_trigger(&hold, out);
             return State::Done;
         }
@@ -519,13 +559,19 @@ impl Engine {
             {
                 self.flush_tap(&first, out);
             }
+            self.report(&mut s, now, out);
             return;
         }
+        // a tap reports itself once it is clear what it was
         let tap = Self::tap_of(&s);
         match first {
             Some(first) if first.n == n => {
                 let dt = Trigger::DoubleTap(n).to_string();
-                if !self.fire_trigger(&dt, out) && !self.is_swallowed(&dt) {
+                if self.is_bound(&dt) || self.is_swallowed(&dt) {
+                    s.note(&dt, self.outcome(&dt));
+                    self.report(&mut s, now, out);
+                    self.fire_trigger(&dt, out);
+                } else {
                     self.flush_tap(&first, out);
                     self.flush_tap(&tap, out);
                 }
@@ -543,6 +589,27 @@ impl Engine {
         } else {
             self.flush_tap(&tap, out);
         }
+    }
+
+    /// Tell the Test page what became of the session; for one that was not recognised, why.
+    fn report(&self, s: &mut Session, now: f64, out: &mut dyn Outputs) {
+        let d = &mut s.diag;
+        d.fingers = s.n;
+        d.duration_ms = (now - s.t_first) * 1000.0;
+        d.travel_mm = s.travel;
+        if d.trigger.is_empty() && d.reason.is_empty() {
+            if s.max_move >= STILL_MM {
+                d.reason = "short";
+                d.need_mm = self.cfg.gestures.swipe_mm;
+            } else if self.is_bound(&Trigger::Hold(s.n).to_string()) {
+                d.reason = "short_hold";
+                d.need_ms = self.cfg.taps.hold_ms as f64;
+            } else {
+                d.reason = "slow_tap";
+                d.need_ms = self.cfg.taps.max_tap_ms as f64;
+            }
+        }
+        out.diagnosis(d);
     }
 
     /// Forget the session (device lost, events dropped); a window being carried is let go.

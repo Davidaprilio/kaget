@@ -459,6 +459,143 @@ fn filter_corner_tap_then_swipe_clicks_and_slides() {
     assert_eq!(s.clone_sink().touched(), [1].into(), "the tap was a click, the swipe stays hidden");
 }
 
+// ---- diagnoses for the Test page --------------------------------------------------------------
+
+fn only_diag(s: &Sim) -> &super::outputs::Diagnosis {
+    assert_eq!(s.out.diags.len(), 1, "{:#?}", s.out.diags);
+    &s.out.diags[0]
+}
+
+#[test]
+fn diag_fired_swipe() {
+    let mut s = filter_sim(USER, true, false);
+    s.touch_all(0.0, THREE);
+    s.drag_all(0.03, THREE, (0, 40), 12);
+    assert!(s.out.diags.is_empty(), "reported when the fingers lift");
+    s.lift_all(0.2, THREE);
+    let d = only_diag(&s);
+    assert_eq!((d.kind, d.fingers, d.trigger.as_str(), d.result, d.action.as_str()), ("multi", 3, "swipe.3.down", "fired", "cmd:shot"));
+    assert!(d.travel_mm > 12.0 && d.span_ms > 0.0);
+}
+
+#[test]
+fn diag_swipe_too_short() {
+    let mut s = filter_sim(USER, true, false);
+    s.touch_all(0.0, THREE);
+    s.drag_all(0.03, THREE, (0, 40), 6); // ~7.7 mm
+    s.lift_all(0.2, THREE);
+    let d = only_diag(&s);
+    assert_eq!((d.result, d.reason, d.need_mm), ("none", "short", 12.0));
+    assert!((d.travel_mm - 7.7).abs() < 0.2, "{}", d.travel_mm);
+}
+
+#[test]
+fn diag_late_finger() {
+    let mut s = filter_sim(USER, true, false);
+    for (&(slot, x, y), t) in FOUR.iter().zip([0.0, 0.02, 0.04, 0.3]) {
+        s.touch(t, slot, x, y);
+    }
+    s.lift_all(0.5, FOUR);
+    let d = only_diag(&s);
+    assert_eq!((d.result, d.reason), ("kde", "late_finger"));
+    assert!((d.late_ms - 300.0).abs() < 1.0, "{}", d.late_ms);
+}
+
+#[test]
+fn diag_fingers_not_together() {
+    let mut s = sim(&[("hold.3", "cmd:hold")]);
+    s.touch(0.0, 0, 1500, 1000);
+    s.touch(0.05, 1, 2000, 1000);
+    s.touch(0.3, 2, 2500, 1000);
+    s.lift_all(0.5, THREE);
+    let d = only_diag(&s);
+    assert_eq!((d.result, d.reason), ("kde", "not_together"));
+    assert!((d.span_ms - 300.0).abs() < 1.0);
+}
+
+#[test]
+fn diag_nothing_bound_for_that_many_fingers() {
+    let mut s = filter_sim(&[("swipe.4.left", "cmd:x")], true, false);
+    s.touch_all(0.0, THREE);
+    s.drag_all(0.03, THREE, (0, 40), 3);
+    s.lift_all(0.2, THREE);
+    let d = only_diag(&s);
+    assert_eq!((d.result, d.reason), ("kde", "count"));
+}
+
+#[test]
+fn diag_tap_goes_to_kde() {
+    let mut s = filter_sim(USER, true, false);
+    s.touch_all(0.0, THREE);
+    s.lift_all(0.1, THREE);
+    let d = only_diag(&s);
+    assert_eq!((d.trigger.as_str(), d.result, d.reason), ("tap.3", "kde", "unbound"));
+}
+
+#[test]
+fn diag_handover() {
+    let mut s = filter_sim(&[("swipe.3.up", "system:4")], true, false);
+    s.touch_all(0.0, THREE);
+    s.drag_all(0.03, THREE, (0, -40), 12);
+    s.lift_all(0.2, THREE);
+    let d = only_diag(&s);
+    assert_eq!((d.trigger.as_str(), d.result, d.action.as_str(), d.reason), ("swipe.3.up", "kde", "system:4", "handover"));
+}
+
+#[test]
+fn diag_corner_outcomes() {
+    // hold
+    let mut s = sim(G);
+    s.touch(0.0, 0, 3900, 100);
+    s.hold(0.0, 0.45, 0, 3900, 100);
+    s.lift(0.5, 0);
+    let d = only_diag(&s);
+    assert_eq!((d.kind, d.corner, d.trigger.as_str(), d.result), ("corner", "top_right", "corner.top_right.hold", "fired"));
+    // a slider: one report with its steps
+    let mut s = sim(G);
+    s.touch(0.0, 0, 100, 100);
+    s.drag(0.0, 0, (100, 100), (40, 0), 25);
+    s.lift(0.3, 0);
+    let d = only_diag(&s);
+    assert_eq!((d.result, d.steps), ("slider", 4));
+    // too short for a swipe
+    let mut s = sim(G);
+    s.touch(0.0, 0, 3900, 100);
+    s.drag(0.0, 0, (3900, 100), (-40, 0), 5); // 6.5 mm
+    s.lift(0.1, 0);
+    let d = only_diag(&s);
+    assert_eq!((d.result, d.reason, d.need_mm), ("none", "short", 7.0));
+    // off the touchpad
+    let mut s = sim(G);
+    s.touch(0.0, 0, 3800, 300);
+    s.drag(0.0, 0, (3800, 300), (0, -30), 10);
+    s.lift(0.1, 0);
+    assert_eq!((only_diag(&s).result, only_diag(&s).reason), ("kde", "off_pad"));
+    // a tap, and one lifted before the hold time
+    let mut s = sim(G);
+    s.touch(0.0, 0, 3900, 100);
+    s.lift(0.1, 0);
+    assert_eq!(only_diag(&s).reason, "tap");
+    let mut s = sim(G);
+    s.touch(0.0, 0, 3900, 100);
+    s.hold(0.0, 0.28, 0, 3900, 100);
+    s.lift(0.29, 0);
+    let d = only_diag(&s);
+    assert_eq!((d.result, d.reason, d.need_ms), ("none", "early", 320.0));
+}
+
+#[test]
+fn diag_corner_taphold_is_one_report() {
+    let mut s = sim(TH);
+    corner_tap(&mut s, 0.0);
+    assert!(s.out.diags.is_empty(), "the tap waits");
+    s.touch(0.25, 0, 3900, 100);
+    s.hold(0.25, 0.65, 0, 3900, 100);
+    s.lift(0.7, 0);
+    let d = only_diag(&s);
+    assert_eq!((d.trigger.as_str(), d.result), ("corner.top_right.taphold", "fired"));
+}
+
 // ---- M5: NumberPad ----------------------------------------------------------------------------
 
 const NP: &[(&str, &str)] = &[

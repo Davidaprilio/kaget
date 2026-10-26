@@ -32,7 +32,7 @@ use config::Config;
 use dbus::{Command, Shared, SignalMsg, Snapshot};
 use device::TouchpadInfo;
 use engine::Engine;
-use engine::outputs::{Fired, Handover, Outputs, PanelEvent};
+use engine::outputs::{Diagnosis, Fired, Handover, Outputs, PanelEvent};
 use executor::Request;
 use filter::Filter;
 use geometry::Geometry;
@@ -255,6 +255,12 @@ impl Outputs for MainOut<'_> {
 
     fn carry_window(&mut self, start: bool) {
         let _ = self.exec.send(Request::CarryWindow(start));
+    }
+
+    fn diagnosis(&mut self, d: &Diagnosis) {
+        if let Ok(j) = serde_json::to_string(d) {
+            let _ = self.signals.send(SignalMsg::Diagnosis(j));
+        }
     }
 }
 

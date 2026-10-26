@@ -46,6 +46,8 @@ pub enum SignalMsg {
     PanelScale(f64),
     /// Panel mode: column under the finger (-1: none).
     PanelFocus(i32),
+    /// What became of a touch (JSON `Diagnosis`), for the Test page.
+    Diagnosis(String),
 }
 
 /// What D-Bus methods read; written by the main thread.
@@ -240,6 +242,9 @@ impl Daemon {
 
     #[zbus(signal)]
     async fn action_failed(emitter: &SignalEmitter<'_>, action: &str, error: &str) -> zbus::Result<()>;
+
+    #[zbus(signal)]
+    async fn diagnosis(emitter: &SignalEmitter<'_>, json: &str) -> zbus::Result<()>;
 }
 
 /// Thread that emits signals, so the main thread never waits for the bus.
@@ -257,6 +262,7 @@ pub fn spawn_signals(conn: Connection) -> Sender<SignalMsg> {
                     SignalMsg::ControlsChanged(j) => conn.emit_signal(none, PATH, IFACE, "ControlsChanged", &(j.as_str(),)),
                     SignalMsg::PanelScale(s) => conn.emit_signal(none, PATH, IFACE, "PanelScale", &(*s,)),
                     SignalMsg::PanelFocus(c) => conn.emit_signal(none, PATH, IFACE, "PanelFocus", &(*c,)),
+                    SignalMsg::Diagnosis(j) => conn.emit_signal(none, PATH, IFACE, "Diagnosis", &(j.as_str(),)),
                     SignalMsg::ActionFailed(a, e) => {
                         conn.emit_signal(none, PATH, IFACE, "ActionFailed", &(a.as_str(), e.as_str()))
                     }

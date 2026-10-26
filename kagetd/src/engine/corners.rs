@@ -1,7 +1,7 @@
 //! Single-contact gestures: corner hold and swipe, sliders with the continuation window, and
 //! NumberPad key touches.
 
-use super::outputs::{Outputs, PanelEvent};
+use super::outputs::{Diagnosis, Outputs, PanelEvent};
 use super::{
     Axis, Engine, KEY_DOWN_S, MOVE_MM, PANEL_DEADZONE_MM, PANEL_GAIN, PANEL_STEP_MM, SLIDER_HYSTERESIS, SWIPE_MM, Slider,
 };
@@ -72,6 +72,8 @@ pub struct Touch {
     pub role: Role,
     pub tid: i32,
     pub t0: f64,
+    /// What it did, reported when it lifts (corner touches and band sliders).
+    pub diag: Option<Diagnosis>,
 }
 
 impl Touch {
@@ -113,6 +115,10 @@ impl Touch {
             Role::Done => "gesture",
         }
     }
+}
+
+fn corner_diag(corner: Corner, trigger: String, (result, action, reason): (&'static str, String, &'static str)) -> Diagnosis {
+    Diagnosis { kind: "corner", fingers: 1, corner: corner.name(), trigger, result, action, reason, ..Default::default() }
 }
 
 fn release_key(codes: &[u16], out: &mut dyn Outputs) {
@@ -218,10 +224,11 @@ impl Engine {
 
     /// The corner tap did not start a tap-and-hold: it was a plain tap (a click for the desktop).
     pub(super) fn flush_corner_tap(&mut self, out: &mut dyn Outputs) {
-        if let Some(t) = self.corner_tap.take()
-            && t.withheld
-        {
-            out.replay(&[t.tid]);
+        if let Some(t) = self.corner_tap.take() {
+            out.diagnosis(&corner_diag(t.corner, String::new(), ("kde", String::new(), "tap")));
+            if t.withheld {
+                out.replay(&[t.tid]);
+            }
         }
     }
 
@@ -242,35 +249,52 @@ impl Engine {
 
     /// A corner touch rested for the hold time: tap-and-hold right after a tap there, else hold;
     /// drifted without a swipe: leave it to KDE (or the panel).
-    fn corner_held(&mut self, slot: usize, c: &Contact, corner: Corner, out: &mut dyn Outputs) -> Role {
-        let still = self.moved_mm(c) < MOVE_MM;
+    fn corner_held(&mut self, slot: usize, c: &Contact, corner: Corner, out: &mut dyn Outputs) -> (Role, Diagnosis) {
+        let moved = self.moved_mm(c);
+        let still = moved < MOVE_MM;
         if self.is_tap_again(slot) {
-            if still && self.fire_trigger(&Trigger::CornerTapHold(corner).to_string(), out) {
+            let taphold = Trigger::CornerTapHold(corner).to_string();
+            let outcome = self.outcome(&taphold);
+            if still && self.fire_trigger(&taphold, out) {
                 // the tap was its first half: no click
                 self.corner_tap = None;
-                return Role::Done;
+                return (Role::Done, corner_diag(corner, taphold, outcome));
             }
             self.flush_corner_tap(out);
         }
-        if still && self.fire_trigger(&Trigger::CornerHold(corner).to_string(), out) {
-            Role::Done
-        } else if let Some(r @ Role::PanelSlider { column, .. }) = self.panel_role(c.x, c.y) {
-            out.panel(PanelEvent::Focus(Some(column)));
-            r
+        let hold = Trigger::CornerHold(corner).to_string();
+        let outcome = self.outcome(&hold);
+        if still && self.fire_trigger(&hold, out) {
+            return (Role::Done, corner_diag(corner, hold, outcome));
+        }
+        let diag = if still {
+            corner_diag(corner, hold, ("kde", String::new(), "unbound"))
         } else {
-            Role::Pointer
+            let d = corner_diag(corner, String::new(), ("kde", String::new(), "drifted"));
+            Diagnosis { travel_mm: moved, need_mm: SWIPE_MM, ..d }
+        };
+        if let Some(r @ Role::PanelSlider { column, .. }) = self.panel_role(c.x, c.y) {
+            out.panel(PanelEvent::Focus(Some(column)));
+            (r, diag)
+        } else {
+            (Role::Pointer, diag)
         }
     }
 
     /// A corner touch moved far enough: start its swipe action, a slider, or leave it to KDE.
-    fn corner_swipe(&mut self, c: &Contact, corner: Corner, out: &mut dyn Outputs) -> Role {
+    fn corner_swipe(&mut self, c: &Contact, corner: Corner, out: &mut dyn Outputs) -> (Role, Diagnosis) {
         let (dx, dy) = self.delta_mm(c);
-        let Some(dir) = swipe_direction(dx, dy, corner) else { return Role::Pointer };
+        let Some(dir) = swipe_direction(dx, dy, corner) else {
+            return (Role::Pointer, corner_diag(corner, String::new(), ("kde", String::new(), "off_pad")));
+        };
         let trigger = Trigger::CornerSwipe(corner, dir).to_string();
-        let Some(b) = self.bound(&trigger).cloned() else { return Role::Pointer };
+        let Some(b) = self.bound(&trigger).cloned() else {
+            return (Role::Pointer, corner_diag(corner, trigger, ("kde", String::new(), "unbound")));
+        };
         if let Some(inverse) = actions::inverse(&b.action)
             && dir != Dir::Diagonal
         {
+            let diag = corner_diag(corner, trigger.clone(), ("slider", b.action.clone(), ""));
             let axis = if matches!(dir, Dir::Left | Dir::Right) { Axis::X } else { Axis::Y };
             let sign = if matches!(dir, Dir::Left | Dir::Up) { -1.0 } else { 1.0 };
             let step = self.cfg.slider.step_mm;
@@ -290,10 +314,11 @@ impl Engine {
             };
             slider.slide(self.along(c, axis), &mut self.steps);
             self.flush_steps(out);
-            return Role::Slider { slider, corner };
+            return (Role::Slider { slider, corner }, diag);
         }
+        let diag = corner_diag(corner, trigger.clone(), ("fired", b.action.clone(), ""));
         self.fire(&trigger, &b.action, b.when_running, out);
-        Role::Done
+        (Role::Done, diag)
     }
 
     /// Panel mode: vertical finger movement adjusts the column's control (up = more).
@@ -392,7 +417,7 @@ impl Engine {
                 self.panel_last = now;
                 out.panel(PanelEvent::Focus(Some(column)));
             }
-            self.touches.insert(c.slot, Touch { role, tid: c.tid, t0: c.t0 });
+            self.touches.insert(c.slot, Touch { role, tid: c.tid, t0: c.t0, diag: None });
         }
         // 2. movement
         let slots: Vec<usize> = self.touches.keys().copied().collect();
@@ -400,6 +425,7 @@ impl Engine {
             let Some(c) = tr.get(slot).filter(|c| !c.lifted) else { continue };
             let Some(mut t) = self.touches.remove(&slot) else { continue };
             let moved = self.moved_mm(c);
+            let steps = self.fired_steps;
             t.role = match t.role {
                 Role::Key { down: false, .. } if moved > MOVE_MM => Role::Pointer,
                 Role::Sticky { fallback, win } if moved > MOVE_MM => {
@@ -415,7 +441,11 @@ impl Engine {
                         _ => Role::Corner(corner),
                     }
                 }
-                Role::Corner(corner) if moved > SWIPE_MM => self.corner_swipe(c, corner, out),
+                Role::Corner(corner) if moved > SWIPE_MM => {
+                    let (role, diag) = self.corner_swipe(c, corner, out);
+                    t.diag = Some(Diagnosis { travel_mm: moved, ..diag });
+                    role
+                }
                 Role::PanelSlider { kind, column, x, y, engaged } => {
                     self.panel_slide(c, kind, column, (x, y), engaged, now, out)
                 }
@@ -426,6 +456,15 @@ impl Engine {
                 }
                 r => r,
             };
+            if t.diag.is_none()
+                && let Role::Slider { slider, corner } = &t.role
+            {
+                // a slider continued in its band
+                t.diag = Some(corner_diag(*corner, slider.trigger.clone(), ("slider", slider.action.clone(), "continued")));
+            }
+            if let Some(d) = t.diag.as_mut() {
+                d.steps += self.fired_steps.wrapping_sub(steps);
+            }
             if self.is_tap_again(slot) && t.role.corner().is_none() {
                 // the second touch became a swipe or pointer movement
                 self.flush_corner_tap(out);
@@ -439,7 +478,7 @@ impl Engine {
             if !tr.get(slot).is_some_and(|c| c.lifted) {
                 continue;
             }
-            let Some(t) = self.touches.remove(&slot) else { continue };
+            let Some(mut t) = self.touches.remove(&slot) else { continue };
             let tap = now - t.t0 < CORNER_TAP_S;
             // panel mode: a tap on a button column runs its action
             if let Role::PanelSlider { kind, .. } = &t.role
@@ -461,6 +500,25 @@ impl Engine {
                 .role
                 .corner()
                 .filter(|&c| tap && still && !again && self.is_bound(&Trigger::CornerTapHold(c).to_string()));
+            // a tap held back for a tap-and-hold reports itself once that is clear
+            let diag = t.diag.take().or_else(|| match t.role.corner() {
+                Some(corner) if tap_corner.is_none() => Some(if tap && still {
+                    corner_diag(corner, String::new(), ("kde", String::new(), "tap"))
+                } else if !still {
+                    Diagnosis { need_mm: SWIPE_MM, ..corner_diag(corner, String::new(), ("none", String::new(), "short")) }
+                } else {
+                    let d = corner_diag(corner, String::new(), ("none", String::new(), "early"));
+                    Diagnosis { need_ms: self.cfg.corners.hold_ms as f64, ..d }
+                }),
+                _ => None,
+            });
+            if let Some(mut d) = diag {
+                d.duration_ms = (now - t.t0) * 1000.0;
+                if d.travel_mm == 0.0 {
+                    d.travel_mm = tr.get(slot).map_or(0.0, |c| self.moved_mm(c));
+                }
+                out.diagnosis(&d);
+            }
             let idle = self.on_lift(t.role, now, out);
             if let Some(corner) = tap_corner {
                 // may be the first half of a tap-and-hold: hold the click back until that is clear
@@ -538,7 +596,11 @@ impl Engine {
                         other => other,
                     }
                 }
-                Role::Corner(corner) if held >= hold_s => self.corner_held(slot, c, corner, out),
+                Role::Corner(corner) if held >= hold_s => {
+                    let (role, diag) = self.corner_held(slot, c, corner, out);
+                    t.diag = Some(diag);
+                    role
+                }
                 r => r,
             };
             self.touches.insert(slot, t);

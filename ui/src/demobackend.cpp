@@ -365,6 +365,35 @@ void DemoBackend::fireGesturesBetween(qint64 from, qint64 to)
                 Q_EMIT gesture(trigger, action);
         }
     }
+
+    // what the daemon reports when each touch ends
+    const auto report = [&](qint64 time, const QString &trigger, int fingers, int steps) {
+        if (time <= from || time > to)
+            return;
+        const QString action = bindingFor(trigger);
+        const QStringList p = trigger.split(u'.');
+        const bool corner = p.value(0) == u"corner"_s;
+        QJsonObject d{
+            {u"kind"_s, corner ? u"corner"_s : u"multi"_s},
+            {u"fingers"_s, fingers},
+            {u"corner"_s, corner ? p.value(1) : QString()},
+            {u"trigger"_s, trigger},
+            {u"result"_s, action.isEmpty() ? u"kde"_s : steps > 0 ? u"slider"_s : u"fired"_s},
+            {u"action"_s, action},
+            {u"reason"_s, action.isEmpty() ? u"unbound"_s : QString()},
+            {u"span_ms"_s, fingers > 1 ? 30 : 0},
+            {u"travel_mm"_s, steps > 0 ? 7.0 + (steps - 1) * s.step : 0.0},
+            {u"duration_ms"_s, 600},
+            {u"steps"_s, steps},
+        };
+        Q_EMIT diagnosis(QString::fromUtf8(QJsonDocument(d).toJson(QJsonDocument::Compact)));
+    };
+    report(s.cornerHold().start + qint64(s.holdMs) + 200, u"corner.top_right.hold"_s, 1, 0);
+    report(s.sideTop().start + s.sideTop().duration, u"sidedrag.top.3"_s, 3, 0);
+    report(s.sideLeft().start + s.sideLeft().duration, u"sidedrag.left.4"_s, 4, 0);
+    const auto strokeSteps = [&](const Stroke &st) { return st.length() < 7.0 ? 0 : 1 + int((st.length() - 7.0) / s.step); };
+    report(right.start + right.duration, u"corner.top_right.swipe.down"_s, 1, strokeSteps(right));
+    report(top.start + top.duration, u"corner.top_left.swipe.right"_s, 1, strokeSteps(top));
 }
 
 void DemoBackend::tick()

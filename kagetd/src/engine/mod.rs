@@ -104,6 +104,8 @@ pub struct Engine {
     multi: multi::Multi,
     /// Steps produced while sliding, fired after the borrow of the slider ends.
     steps: Vec<(String, String, Option<String>)>,
+    /// Slider steps fired so far (for the diagnosis of the touch that moves the slider).
+    fired_steps: u32,
     /// Time of the current frame / tick.
     now: f64,
     /// Passive mode: the pointer is switched off in KWin (NumberPad or panel mode).
@@ -132,6 +134,7 @@ impl Engine {
             corner_tap: None,
             multi: multi::Multi::default(),
             steps: Vec::new(),
+            fired_steps: 0,
             now: 0.0,
             pointer_off: false,
             panel_open: false,
@@ -272,6 +275,16 @@ impl Engine {
     fn flush_steps(&mut self, out: &mut dyn Outputs) {
         for (t, a, w) in std::mem::take(&mut self.steps) {
             self.fire(&t, &a, w, out);
+            self.fired_steps = self.fired_steps.wrapping_add(1);
+        }
+    }
+
+    /// What running `trigger` will do: (result, action, reason) for its diagnosis.
+    fn outcome(&self, trigger: &str) -> (&'static str, String, &'static str) {
+        match self.bound(trigger) {
+            Some(b) => ("fired", b.action.clone(), ""),
+            None if self.is_swallowed(trigger) => ("swallowed", String::new(), ""),
+            None => ("kde", String::new(), "unbound"),
         }
     }
 
