@@ -26,6 +26,7 @@ Kirigami.Page {
         case "gesture": return { label: i18n("Multi-finger gesture"), color: "#da4453" };
         case "key": return { label: i18n("NumberPad key"), color: "#1abc9c" };
         case "withheld": return { label: i18n("Being recognised…"), color: "#f1c40f" };
+        case "resting": return { label: i18n("Resting (not part of the gesture)"), color: Kirigami.Theme.disabledTextColor };
         default: return { label: role !== "" ? role : i18n("Unknown"), color: Kirigami.Theme.disabledTextColor };
         }
     }

@@ -3,6 +3,7 @@
 
 use std::collections::BTreeMap;
 
+use super::corners::{Role, Touch};
 use super::outputs::{Diagnosis, Fired, Outputs};
 use super::{Axis, Engine, SLIDER_HYSTERESIS, Slider};
 use crate::actions::{self, Action};
@@ -14,7 +15,12 @@ use crate::triggers::{Dir, EDGES, Edge, Trigger};
 pub const LANDING_S: f64 = 0.08;
 /// A finger landing later than that still joins until this time, as long as nothing was recognised
 /// yet (and no finger is busy with a slider): the gesture then starts over from where the fingers are.
+/// Fingers that were down longer before the newest one (a resting thumb, one left over from the
+/// last gesture) are not part of the gesture.
 pub const JOIN_S: f64 = 0.2;
+/// Fingers that landed further apart than `JOIN_S` but within this are a sloppy landing worth a
+/// diagnosis; longer is a finger simply resting there.
+pub const SLOPPY_S: f64 = 1.0;
 /// A tap or hold may not move more than this (per finger).
 pub const STILL_MM: f64 = 3.0;
 /// Synthesized fingers (`system:<n>`) stay this far from the left and right edge, where libinput
@@ -53,6 +59,12 @@ struct Session {
     carry: bool,
     /// Farthest the centroid got from the start (mm).
     travel: f64,
+    /// Contacts that were down already but are not part of it (slot, tracking id): a resting
+    /// thumb, a finger left over from the last gesture.
+    ignored: Vec<(usize, i32)>,
+    /// Filter mode: those were taken out of the clone when the gesture went to the desktop, so it
+    /// counts only the gesture's fingers.
+    suspended: bool,
     /// What became of it so far, reported when the fingers lift.
     diag: Diagnosis,
 }
@@ -175,8 +187,11 @@ impl Engine {
     }
 
     pub(super) fn multi_hidden(&self, slot: usize) -> Option<bool> {
-        let s = self.multi.session.as_ref().filter(|s| s.start.contains_key(&slot))?;
-        Some(s.withhold && !s.revealed)
+        let s = self.multi.session.as_ref()?;
+        if s.start.contains_key(&slot) {
+            return Some(s.withhold && !s.revealed);
+        }
+        (s.suspended && s.ignored.iter().any(|&(sl, _)| sl == slot)).then_some(true)
     }
 
     /// Filter mode: could a binding match a session of `n` fingers (`exact`: exactly n, else n or
@@ -200,7 +215,17 @@ impl Engine {
     fn reveal(s: &mut Session, out: &mut dyn Outputs) {
         if s.withhold && !s.revealed {
             s.revealed = true;
+            Self::suspend_ignored(s, out);
             out.replay(&s.tids);
+        }
+    }
+
+    /// The gesture goes to the desktop: take the contacts that are not part of it out of the clone.
+    fn suspend_ignored(s: &mut Session, out: &mut dyn Outputs) {
+        if !s.ignored.is_empty() && !s.suspended {
+            s.suspended = true;
+            let tids: Vec<i32> = s.ignored.iter().map(|&(_, tid)| tid).collect();
+            out.suspend(&tids);
         }
     }
 
@@ -272,6 +297,7 @@ impl Engine {
         s.note(trigger, ("kde", action.into(), "handover"));
         if s.withhold && !s.revealed {
             s.revealed = true;
+            Self::suspend_ignored(s, out);
             if window {
                 // before the desktop starts to move
                 s.carry = true;
@@ -291,10 +317,33 @@ impl Engine {
         if !self.multi_enabled() {
             return;
         }
-        let live: Vec<_> = tr.contacts().filter(|c| !c.lifted).collect();
-        let fresh = live.iter().any(|c| c.fresh);
+        let all: Vec<_> = tr.contacts().filter(|c| !c.lifted).collect();
+        let fresh = all.iter().any(|c| c.fresh);
+        // the last gesture is being let go (at most half of its fingers left; one finger that
+        // bounces is not that): new fingers start a new one instead of joining it
+        if fresh
+            && self.multi.session.as_ref().is_some_and(|s| {
+                let left = all.iter().filter(|c| !c.fresh && s.start.contains_key(&c.slot)).count() as u32;
+                !matches!(s.state, State::Pending) && left * 2 <= s.n
+            })
+        {
+            self.multi_end(tr, now, out);
+        }
         if self.multi.session.is_none() {
-            if live.len() < 3 || !fresh {
+            if all.len() < 3 || !fresh {
+                return;
+            }
+            // fingers down since well before the newest one rest there: not part of the gesture
+            let t_new = all.iter().map(|c| c.t0).fold(f64::NEG_INFINITY, f64::max);
+            let (live, rest): (Vec<_>, Vec<_>) = all.iter().copied().partition(|c| c.t0 >= t_new - JOIN_S);
+            if live.len() < 3 {
+                let first = all.iter().map(|c| c.t0).fold(f64::INFINITY, f64::min);
+                if t_new - first <= SLOPPY_S {
+                    let reason = "not_together";
+                    let span_ms = (t_new - first) * 1000.0;
+                    let d = Diagnosis { kind: "multi", fingers: all.len() as u32, result: "kde", reason, span_ms, need_ms: JOIN_S * 1000.0, ..Default::default() };
+                    out.diagnosis(&d);
+                }
                 return;
             }
             let t_first = live.iter().map(|c| c.t0).fold(f64::INFINITY, f64::min);
@@ -327,8 +376,7 @@ impl Engine {
             let mut diag = Diagnosis { kind: "multi", result: "none", span_ms: span * 1000.0, ..Default::default() };
             if !landed_together {
                 diag.result = "kde";
-                diag.reason = if span <= JOIN_S { "busy" } else { "not_together" };
-                diag.need_ms = JOIN_S * 1000.0;
+                diag.reason = "busy";
             }
             self.multi.session = Some(Session {
                 n,
@@ -345,9 +393,13 @@ impl Engine {
                 checked: false,
                 carry: false,
                 travel: 0.0,
+                ignored: rest.iter().map(|c| (c.slot, c.tid)).collect(),
+                suspended: false,
                 diag,
             });
         } else if let Some(s) = self.multi.session.as_mut() {
+            // its own fingers and those landing now; the others it ignores
+            let live: Vec<_> = all.iter().copied().filter(|c| c.fresh || s.start.contains_key(&c.slot)).collect();
             let fresh: Vec<_> = live.iter().filter(|c| c.fresh).collect();
             if !fresh.is_empty() {
                 let mut d = shift(&self.geo, s, &live);
@@ -394,8 +446,24 @@ impl Engine {
             }
         }
         self.multi_classify(tr, now, out);
-        if tr.contacts().all(|c| c.lifted) {
-            self.multi_end(now, out);
+        if self.multi.session.as_ref().is_some_and(|s| s.start.keys().all(|&slot| tr.get(slot).is_none_or(|c| c.lifted))) {
+            self.multi_end(tr, now, out);
+        }
+    }
+
+    /// Contacts still down when a session ends: its own leftover fingers stay hidden if the
+    /// desktop never had them; the ones it took out of the clone rest until they move.
+    fn release_rest(&mut self, s: &Session, tr: &Tracker) {
+        for c in tr.contacts().filter(|c| !c.lifted && !c.fresh) {
+            if s.start.contains_key(&c.slot) {
+                let role = if s.withhold && !s.revealed { Role::Done } else { Role::Pointer };
+                self.touches.insert(c.slot, Touch { role, tid: c.tid, t0: c.t0, diag: None });
+            } else if s.suspended
+                && s.ignored.iter().any(|&(slot, _)| slot == c.slot)
+                && let Some(t) = self.touches.get_mut(&c.slot)
+            {
+                t.role = Role::Resting { x: c.x, y: c.y };
+            }
         }
     }
 
@@ -542,9 +610,10 @@ impl Engine {
         State::Pending
     }
 
-    /// All fingers lifted.
-    fn multi_end(&mut self, now: f64, out: &mut dyn Outputs) {
+    /// All its fingers lifted, or a new gesture starts while the last ones of this one leave.
+    fn multi_end(&mut self, tr: &Tracker, now: f64, out: &mut dyn Outputs) {
         let Some(mut s) = self.multi.session.take() else { return };
+        self.release_rest(&s, tr);
         if s.carry {
             out.carry_window(false);
         }

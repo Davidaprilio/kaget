@@ -54,6 +54,9 @@ pub enum Role {
     PanelSlider { kind: String, column: usize, x: f64, y: f64, engaged: bool },
     /// A gesture fired; the rest of this touch is ignored.
     Done,
+    /// Rested next to a gesture the desktop got and was taken out of the clone meanwhile: hidden
+    /// until it moves from here (device units), so lifting it is not a tap.
+    Resting { x: i32, y: i32 },
 }
 
 impl Role {
@@ -113,6 +116,7 @@ impl Touch {
             Role::Key { .. } => "key",
             Role::PanelSlider { .. } => "panel",
             Role::Done => "gesture",
+            Role::Resting { .. } => "resting",
         }
     }
 }
@@ -428,6 +432,7 @@ impl Engine {
             let steps = self.fired_steps;
             t.role = match t.role {
                 Role::Key { down: false, .. } if moved > MOVE_MM => Role::Pointer,
+                Role::Resting { x, y } if self.geo.dist_mm((c.x, c.y), (x, y)) > MOVE_MM => Role::Pointer,
                 Role::Sticky { fallback, win } if moved > MOVE_MM => {
                     self.continue_or_fallback(c, *fallback, win, out)
                 }

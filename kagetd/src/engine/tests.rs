@@ -54,6 +54,7 @@ impl Sim {
     fn forward(&mut self, evs: &[InputEvent], t: f64) {
         let replays: Vec<i32> = self.out.replays.drain(..).flatten().collect();
         if let Some(f) = self.filt.as_mut() {
+            f.suspend(&std::mem::take(&mut self.out.suspended), t);
             for (tids, extra) in self.out.extra.drain(..) {
                 f.add_fingers(&tids, &extra);
             }
@@ -457,6 +458,75 @@ fn filter_corner_tap_then_swipe_clicks_and_slides() {
     assert!(s.out.count("volume.down") >= 1);
     assert!(!s.out.fired.iter().any(|f| f.action == "cmd:th" || f.action == "cmd:hold"));
     assert_eq!(s.clone_sink().touched(), [1].into(), "the tap was a click, the swipe stays hidden");
+}
+
+// ---- resting and leftover fingers ----------------------------------------------------------------
+
+/// Thumb resting low on the pad (slot 4) since long before.
+fn thumb_down(s: &mut Sim) {
+    s.touch(0.0, 4, 2000, 2150);
+}
+
+#[test]
+fn resting_thumb_does_not_spoil_a_gesture() {
+    let mut s = filter_sim(USER, true, false);
+    thumb_down(&mut s);
+    s.touch_all(2.0, THREE);
+    s.drag_all(2.03, THREE, (0, 40), 12);
+    assert_eq!(s.out.actions(), ["cmd:shot"]);
+    assert_eq!(s.out.diags.len(), 0, "reported once the three lift");
+    s.lift_all(2.2, THREE);
+    assert_eq!(s.out.diags[0].fingers, 3, "the thumb is not counted");
+}
+
+#[test]
+fn resting_thumb_is_taken_out_while_the_desktop_has_the_gesture() {
+    let mut s = filter_sim(&[("swipe.3.up", "system:4")], true, false);
+    thumb_down(&mut s);
+    assert_eq!(s.clone_sink().down(), [1].into(), "a resting finger is plain pointer input");
+    s.touch_all(2.0, THREE);
+    let t = s.drag_all(2.03, THREE, (0, -40), 12);
+    assert_eq!(s.out.actions(), ["system:4"]);
+    assert_eq!(s.clone_sink().down(), [2, 3, 4, EXTRA].into(), "KWin counts the gesture's fingers only");
+    s.lift_all(t + 0.01, THREE);
+    s.tick(t + 1.0);
+    assert!(s.clone_sink().down().is_empty(), "lifting the resting thumb later is no tap");
+    assert_eq!(s.e.role(4), "resting");
+    // used as a pointer finger again: back to the desktop
+    s.drag(t + 1.0, 4, (2000, 2150), (-40, 0), 6);
+    assert_eq!(s.e.role(4), "pointer");
+    assert_eq!(s.clone_sink().down(), [1].into());
+}
+
+#[test]
+fn leftover_finger_does_not_block_the_next_swipe() {
+    let mut s = filter_sim(USER, true, false);
+    s.touch_all(0.0, THREE);
+    s.drag_all(0.03, THREE, (0, 40), 12);
+    assert_eq!(s.out.actions(), ["cmd:shot"]);
+    // two fingers leave, one stays on the pad
+    s.lift(0.2, 0);
+    s.lift(0.2, 1);
+    // the next swipe lands next to it
+    let next = &[(0, 1500, 600), (1, 2000, 600), (3, 3000, 600)];
+    s.touch_all(0.6, next);
+    s.drag_all(0.63, next, (0, 40), 12);
+    assert_eq!(s.out.actions(), ["cmd:shot", "cmd:shot"]);
+    assert!(!s.clone_sink().touched().contains(&3), "the leftover finger stays hidden");
+}
+
+#[test]
+fn bounce_during_a_slider_is_not_a_new_gesture() {
+    let mut s = filter_sim(&[("swipe.4.right", "volume.up")], true, false);
+    s.touch_all(0.0, FOUR);
+    let t = s.drag_all(0.05, FOUR, (31, 0), 20);
+    let ups = s.out.count("volume.up");
+    s.lift(t, 1);
+    s.touch(t + 0.02, 1, 2000 + 620, 900);
+    let moved: Vec<(i32, i32, i32)> = FOUR.iter().map(|&(sl, x, y)| (sl, x + 620, y)).collect();
+    s.drag_all(t + 0.02, &moved, (31, 0), 10);
+    assert!(s.out.count("volume.up") > ups);
+    assert_eq!(s.out.count("volume.down"), 0);
 }
 
 // ---- diagnoses for the Test page --------------------------------------------------------------

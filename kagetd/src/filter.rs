@@ -132,6 +132,29 @@ impl<S: Sink> Filter<S> {
         self
     }
 
+    /// Take contacts out of the clone although they are still down (see `Outputs::suspend`). They
+    /// stay hidden until the engine shows them again and then come back where they are.
+    pub fn suspend(&mut self, tids: &[i32], now: f64) {
+        for &tid in tids {
+            let Some(c) = self.contacts.get_mut(&tid).filter(|c| c.lifted.is_none()) else { continue };
+            c.visible = false;
+            c.start_axes = c.axes.clone();
+            if c.clone_slot.is_some() {
+                // never a tap for libinput
+                let at = c.t_clone + TAP_SAFE_S;
+                if now >= at {
+                    self.lift_clone(tid);
+                } else {
+                    self.deferred.push((tid, at));
+                }
+            }
+        }
+        for f in &mut self.history {
+            f.updates.retain(|u| !tids.contains(&u.0));
+        }
+        self.history.retain(|f| !f.updates.is_empty() || !f.lifts.is_empty());
+    }
+
     /// With the next replay of `tids`, add fingers at these offsets from their centroid that
     /// follow them (see `Outputs::replay_as`).
     pub fn add_fingers(&mut self, tids: &[i32], offsets: &[(i32, i32)]) {

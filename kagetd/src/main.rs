@@ -149,6 +149,8 @@ struct MainOut<'a> {
     replays: Vec<i32>,
     /// ...some with synthesized fingers that follow them (`system:<n>`).
     extra: Vec<Handover>,
+    /// Contacts to take out of the clone while they rest (filter mode).
+    suspend: Vec<i32>,
     /// Panel mode: movement of the `scale` column (percent of its range) and whether to save it.
     scale_delta: f64,
     commit_scale: bool,
@@ -173,6 +175,7 @@ impl<'a> MainOut<'a> {
             dirty: false,
             replays: Vec::new(),
             extra: Vec::new(),
+            suspend: Vec::new(),
             scale_delta: 0.0,
             commit_scale: false,
         }
@@ -255,6 +258,10 @@ impl Outputs for MainOut<'_> {
 
     fn carry_window(&mut self, start: bool) {
         let _ = self.exec.send(Request::CarryWindow(start));
+    }
+
+    fn suspend(&mut self, tids: &[i32]) {
+        self.suspend.extend_from_slice(tids);
     }
 
     fn diagnosis(&mut self, d: &Diagnosis) {
@@ -654,6 +661,7 @@ impl Daemon {
                 pad.tracker.apply(&f.events, f.t);
                 pad.engine.frame(&pad.tracker, f.t, &mut out);
                 if let Some(fl) = pad.filter.as_mut() {
+                    fl.suspend(&std::mem::take(&mut out.suspend), f.t);
                     for (tids, extra) in out.extra.drain(..) {
                         fl.add_fingers(&tids, &extra);
                     }
@@ -666,6 +674,7 @@ impl Daemon {
         let now = sys::now();
         pad.engine.tick(&pad.tracker, now, &mut out);
         if let Some(fl) = pad.filter.as_mut() {
+            fl.suspend(&std::mem::take(&mut out.suspend), now);
             for (tids, extra) in out.extra.drain(..) {
                 fl.add_fingers(&tids, &extra);
             }

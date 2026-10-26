@@ -86,6 +86,9 @@ pub trait Outputs {
     /// screen) or its fingers lifted (`false`; leave the window on the desktop it ends up on).
     fn carry_window(&mut self, _start: bool) {}
     fn diagnosis(&mut self, _d: &Diagnosis) {}
+    /// Filter mode: take these contacts out of the clone although they are still down (they rest
+    /// next to a gesture handed to the desktop), until the engine shows them again.
+    fn suspend(&mut self, _tids: &[i32]) {}
 }
 
 /// Records outputs for tests and `--replay`.
@@ -101,6 +104,7 @@ pub struct FakeOutputs {
     pub panel: Vec<PanelEvent>,
     pub carry: Vec<bool>,
     pub diags: Vec<Diagnosis>,
+    pub suspended: Vec<i32>,
 }
 
 #[cfg(test)]
@@ -145,5 +149,8 @@ impl Outputs for FakeOutputs {
     }
     fn diagnosis(&mut self, d: &Diagnosis) {
         self.diags.push(d.clone());
+    }
+    fn suspend(&mut self, tids: &[i32]) {
+        self.suspended.extend_from_slice(tids);
     }
 }
