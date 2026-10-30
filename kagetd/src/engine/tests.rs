@@ -274,6 +274,33 @@ fn continuation_swipe_up_in_right_band() {
     assert!(s.out.count("volume.down") >= 1);
 }
 
+fn bottom_slider(t: f64) -> Sim {
+    let mut c = config(&[("corner.bottom_left.swipe.right", "media.next")]);
+    c.area.bottom = 20.0;
+    let mut s = sim_with(c, false);
+    s.touch(t, 0, 100, 2200);
+    s.drag(t, 0, (100, 2200), (40, 0), 14);
+    s.lift(t + 0.15, 0);
+    assert_eq!(s.out.count("media.next"), 2);
+    s.out.clear();
+    s
+}
+
+#[test]
+fn bottom_corner_slider_continues_in_the_bottom_band() {
+    let mut s = bottom_slider(0.0);
+    s.touch(0.5, 0, 2000, 2100);
+    s.drag(0.5, 0, (2000, 2100), (40, 0), 10);
+    s.lift(0.7, 0);
+    assert!(s.out.count("media.next") >= 1, "{:?}", s.out.actions());
+    // not in the top band
+    let mut s = bottom_slider(0.0);
+    s.touch(0.5, 0, 2000, 100);
+    s.drag(0.5, 0, (2000, 100), (40, 0), 10);
+    s.lift(0.7, 0);
+    assert!(s.out.fired.is_empty(), "{:?}", s.out.actions());
+}
+
 #[test]
 fn continuation_first_step_is_single_in_both_directions() {
     let mut s = sim(G);

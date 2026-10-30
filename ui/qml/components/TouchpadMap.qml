@@ -123,7 +123,7 @@ Item {
                 continue;
             const horizontal = dir === "left" || dir === "right";
             const vertical = dir === "up" || dir === "down";
-            if ((edge === "top" && horizontal)
+            if (((edge === "top" || edge === "bottom") && horizontal && corner.startsWith(edge))
                     || (edge === "right" && vertical && corner.endsWith("right"))
                     || (edge === "left" && vertical && corner.endsWith("left"))) {
                 if (!out.includes(info.label))
@@ -411,13 +411,16 @@ Item {
 
         // Area bands: which sliders continue there.
         Repeater {
-            model: ["top", "left", "right"]
+            model: ["top", "bottom", "left", "right"]
             delegate: QQC2.Label {
                 id: bandCaption
+                readonly property bool across: modelData === "top" || modelData === "bottom"
                 required property string modelData
                 readonly property var sliders: map.slidersInBand(modelData)
-                readonly property real bandMm: modelData === "top" ? map.areaTop : modelData === "left" ? map.areaLeft : map.areaRight
-                readonly property real sideMm: modelData === "top" ? map.sideTop : modelData === "left" ? map.sideLeft : map.sideRight
+                readonly property real bandMm: modelData === "top" ? map.areaTop : modelData === "bottom" ? map.areaBottom
+                                             : modelData === "left" ? map.areaLeft : map.areaRight
+                readonly property real sideMm: modelData === "top" ? map.sideTop : modelData === "bottom" ? map.sideBottom
+                                             : modelData === "left" ? map.sideLeft : map.sideRight
                 visible: map.cornersOn && map.showLabels && map.roomy && !map.showNumberPad && sliders.length > 0 && (bandMm - sideMm) * map.s > Kirigami.Units.gridUnit * 2.5
                 text: i18nc("@info:tooltip %1 list of slider actions", "↔ Slider continues: %1", sliders.join(", "))
                 font: Kirigami.Theme.smallFont
@@ -425,14 +428,15 @@ Item {
                 wrapMode: Text.Wrap
                 maximumLineCount: 3
                 elide: Text.ElideRight
-                horizontalAlignment: modelData === "top" ? Text.AlignHCenter : (modelData === "left" ? Text.AlignLeft : Text.AlignRight)
-                width: modelData === "top" ? Math.min(pad.width * 0.5, Kirigami.Units.gridUnit * 18)
-                                           : Math.max(Kirigami.Units.gridUnit * 3, (bandMm - sideMm) * map.s - Kirigami.Units.largeSpacing)
-                x: modelData === "top" ? (pad.width - width) / 2
-                                       : modelData === "left" ? map.sideLeft * map.s + Kirigami.Units.smallSpacing
-                                                              : pad.width - map.sideRight * map.s - width - Kirigami.Units.smallSpacing
+                horizontalAlignment: across ? Text.AlignHCenter : (modelData === "left" ? Text.AlignLeft : Text.AlignRight)
+                width: across ? Math.min(pad.width * 0.5, Kirigami.Units.gridUnit * 18)
+                              : Math.max(Kirigami.Units.gridUnit * 3, (bandMm - sideMm) * map.s - Kirigami.Units.largeSpacing)
+                x: across ? (pad.width - width) / 2
+                          : modelData === "left" ? map.sideLeft * map.s + Kirigami.Units.smallSpacing
+                                                 : pad.width - map.sideRight * map.s - width - Kirigami.Units.smallSpacing
                 y: modelData === "top" ? map.areaTop * map.s - height - Kirigami.Units.smallSpacing
-                                       : pad.height * 0.64
+                 : modelData === "bottom" ? pad.height - map.areaBottom * map.s + Kirigami.Units.smallSpacing
+                 : pad.height * 0.64
             }
         }
 

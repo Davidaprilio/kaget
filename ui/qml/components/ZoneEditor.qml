@@ -42,8 +42,8 @@ ColumnLayout {
                     return false;
                 const horizontal = p[3] === "left" || p[3] === "right";
                 const vertical = p[3] === "up" || p[3] === "down";
-                if (edge === "top")
-                    return horizontal;
+                if (edge === "top" || edge === "bottom")
+                    return horizontal && p[1].startsWith(edge);
                 if (edge === "right")
                     return vertical && p[1].endsWith("right");
                 if (edge === "left")
@@ -79,8 +79,6 @@ ColumnLayout {
             const depth = cfg.area?.[edge] ?? 0;
             if (depth <= 0)
                 return i18n("This area is disabled (0 mm). Drag its line inwards to enable it.");
-            if (edge === "bottom")
-                return i18n("%1 mm deep. No v1 gesture continues in the bottom area.", mm(depth));
             return i18n("%1 mm deep. After a slider gesture from a corner ends, swiping along the same axis in this area within %2 s continues it. These corner swipes use it:",
                         mm(depth), Number(cfg.slider?.continue_s ?? 0).toLocaleString(Qt.locale(), "f", 1));
         }
@@ -149,7 +147,7 @@ ColumnLayout {
     }
 
     QQC2.Label {
-        visible: editor.triggerList.length === 0 && editor.zone !== "" && editor.zone !== "band.bottom"
+        visible: editor.triggerList.length === 0 && editor.zone !== ""
         text: DaemonClient.triggers.length === 0 ? i18n("The gesture list is not loaded yet.") : i18n("No gestures use this area.")
         opacity: 0.7
         wrapMode: Text.Wrap

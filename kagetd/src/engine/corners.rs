@@ -200,6 +200,7 @@ impl Engine {
 
     fn in_window_band(&self, w: &Window, c: &Contact) -> bool {
         let edge = match w.axis {
+            Axis::X if w.corner.is_bottom() => Edge::Bottom,
             Axis::X => Edge::Top,
             Axis::Y if w.corner.is_right() => Edge::Right,
             Axis::Y => Edge::Left,
